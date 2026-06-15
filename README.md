@@ -1,47 +1,93 @@
 # AuthCode
 
-AuthCode 是一个 Kotlin + Maven 编写的 Paper / Folia 登录与邀请码白名单插件，目标运行环境为 Java 21+、Paper 1.21+、Folia 1.21+。
+AuthCode 是一个 Kotlin + Maven 编写的 Velocity + Paper/Folia 混合认证插件项目。
 
-## 重要安全说明
+现在会生成两个服务端插件：
 
-本插件支持 `online-mode=false` 的服务器，但必须明确：
+1. AuthCode Velocity 插件：`authcode-velocity/target/authcode-velocity-1.0.0.jar`
+2. AuthCode Paper/Folia 子服插件：`authcode-paper/target/authcode-paper-1.0.0.jar`
 
-> 在 online-mode=false 下，Mojang 用户名查询只能判断这个名字是否存在正版账号，不能证明当前连接者就是该正版账号本人。存在正版名被冒用风险。
+## 构建
 
-因此 `config.yml` 提供了 `premium.auto-pass` 开关。不接受该风险时，请设置：
-
-```yaml
-premium:
-  auto-pass: false
+```bash
+mvn clean package
 ```
 
-## 构建与安装
+## 安装步骤
 
-1. 使用 Java 21+。
-2. 执行 `mvn clean package`。
-3. 将 `target/authcode-1.0.0.jar` 放入服务器 `plugins/` 目录。
-4. 启动服务器，插件会在 `plugins/AuthCode/` 下生成配置、语言文件、`gui/` 文件夹和 SQLite 数据库。
+1. 把 `authcode-velocity/target/authcode-velocity-1.0.0.jar` 放入 Velocity 的 `plugins/`。
+2. 把 `authcode-paper/target/authcode-paper-1.0.0.jar` 放入 Paper/Folia 子服的 `plugins/`。
+3. Velocity `velocity.toml` 必须设置：
 
-## 玩家流程
+```toml
+online-mode = false
+player-info-forwarding-mode = "modern"
+```
 
-正版自动放行开启时，玩家进服后插件会异步查询 Mojang API。查询到用户名存在正版档案时直接放行；查询失败时按 `premium.failed-action` 处理。
+4. Paper/Folia 子服 `server.properties` 必须设置：
 
-非正版玩家首次进入后会被锁定，需要：
+```properties
+online-mode=false
+```
+
+5. Paper/Folia 必须开启 Velocity modern forwarding，并设置 Velocity forwarding secret。
+6. 设置 AuthCode Velocity 与 AuthCode Paper 两边相同的 `forward.secret` / `proxy.secret`。
+7. 禁止玩家直连 Paper/Folia 子服。
+8. 启动 Velocity 和子服。
+
+## 认证流程
+
+玩家连接 Velocity 后，AuthCode Velocity 只用 Mojang 用户名查询判断这个名字是否存在正版档案：
+
+- 名字存在正版档案：对该连接执行 `forceOnlineMode()`，由 Velocity 交给 Mojang 真正验证。
+- 名字不存在正版档案：对该连接执行 `forceOfflineMode()`，允许离线账号进入。
+
+真正的正版证明只来自：
 
 ```text
-/code 邀请码
-/reg 密码 确认密码
+Velocity forceOnlineMode()
+Mojang 验证成功
+玩家成功进入 Velocity PostLogin 阶段
+Velocity 标记 premium=true
+Velocity 通过 HMAC 签名 payload 发给子服
+子服验证签名、timestamp、nonce、uuid、username 后放行
 ```
 
-已注册玩家再次进入需要：
+如果名字存在正版档案，但连接者不是该正版账号号主，Mojang 验证会失败，玩家不会进入 PostLogin，也不会降级成离线玩家。
 
-```text
-/login 密码
-```
+## 安全说明
 
-## 命令
+后端 Paper / Folia 子服不能暴露公网。玩家必须只能连接 Velocity，必须使用防火墙或只监听本地地址限制后端访问。
 
-玩家命令：
+Velocity modern forwarding 不是防火墙替代品。如果子服允许直连，攻击者可能绕过 Velocity 认证。
+
+## Velocity 配置
+
+默认配置位于 `authcode-velocity/src/main/resources/config.yml`，运行后复制到 Velocity 的 `plugins/authcode/config.yml`。
+
+关键项：
+
+- `premium.enabled`：是否启用 Velocity 端正版名检查。
+- `premium.check-mode`：当前支持 `MOJANG_NAME_LOOKUP`。
+- `forward.channel`：发送给子服的 plugin message 通道，默认 `authcode:auth`。
+- `forward.secret`：HMAC 密钥，必须与子服 `proxy.secret` 一致。
+- `forward.payload-ttl-seconds`：payload 有效期。
+- `forward.send-delay-ticks`：玩家连接后端后延迟发送认证包。
+
+## Paper/Folia 配置
+
+默认配置位于 `authcode-paper/src/main/resources/config.yml`，运行后复制到 `plugins/AuthCode/config.yml`。
+
+关键项：
+
+- `proxy.enabled: true`
+- `proxy.mode: VELOCITY_PROXY_PLUGIN`
+- `proxy.channel: "authcode:auth"`
+- `proxy.secret`：必须与 Velocity `forward.secret` 一致。
+- `proxy.require-proxy-assertion: true`：未收到 Velocity 认证包时踢出。
+- `premium.legacy-mojang-name-lookup-enabled: false`：旧模式只查名字，有冒名风险，不推荐。
+
+## 玩家命令
 
 - `/code <邀请码>`：提交邀请码。
 - `/reg <密码> <确认密码>`：注册密码。
@@ -58,78 +104,37 @@ premium:
 - `/authcode premium <玩家名> <true/false>`
 - `/authcode reload`
 
-过期时间支持 `30m`、`1h`、`7d`、`30d`、`never`。
-
-## 权限
-
-- `authcode.admin`：全部管理命令。
-- `authcode.admin.create`：创建邀请码。
-- `authcode.admin.delete`：删除邀请码。
-- `authcode.admin.list`：查看邀请码。
-- `authcode.admin.reload`：重载配置与语言文件。
-- `authcode.admin.premium`：设置玩家正版放行状态。
-- `authcode.bypass`：绕过验证。
-
-## 配置
-
-默认配置位于 `src/main/resources/config.yml`，运行后复制到 `plugins/AuthCode/config.yml`。
-
-核心配置：
-
-- `settings.auth-timeout-seconds`：验证超时时间。
-- `settings.max-login-attempts`：登录最大错误次数。
-- `settings.password-min-length` / `settings.password-max-length`：密码长度限制。
-- `premium.auto-pass`：是否允许正版名自动放行。
-- `premium.failed-action`：Mojang API 失败后的处理，支持 `REQUIRE_CODE`、`ALLOW`、`KICK`。
-- `lock.*`：未验证玩家锁定项。
-- `commands.allowed-before-auth`：验证前允许执行的命令。
-
-## 语言文件
-
-所有玩家可见文本均来自：
-
-```text
-plugins/AuthCode/lang/zh_cn.yml
-```
-
-语言文件支持 MiniMessage 与变量，例如：
-
-```yaml
-auth:
-  login-failed: "{prefix}<red>密码错误，剩余尝试次数：{times}</red>"
-```
-
-## GUI 文件规范
-
-当前版本不实现 GUI，但插件会创建 `gui/` 文件夹。后续 GUI 必须放入：
-
-```text
-plugins/AuthCode/gui/*.yml
-```
-
-GUI 标题、按钮名、Lore、材质、CustomModelData、槽位和动作不得硬编码在 Kotlin 代码中。
-
-## Folia 注意事项
-
-AuthCode 默认兼容 Folia：
-
-- 数据库、Mojang API、BCrypt 走异步调度。
-- 玩家消息、踢出、药水效果等 Player API 操作通过 `SchedulerAdapter#runAtEntity` 切回安全上下文。
-- Paper 环境使用 Bukkit Scheduler 作为回退，仅封装在 `PaperSchedulerAdapter` 中。
-- `paper-plugin.yml` 包含 `folia-supported: true`。
-
 ## 数据库
 
-默认使用 SQLite：
+Paper/Folia 子服默认使用 SQLite：`plugins/AuthCode/authcode.db`。
 
-```text
-plugins/AuthCode/authcode.db
-```
-
-启动时自动创建：
+保留表：
 
 - `players`
 - `invite_codes`
 - `invite_code_uses`
 
-插件关闭时会清理缓存并关闭 Hikari 连接池。
+新增/迁移：
+
+- `players.auth_source`
+- `players.last_proxy_premium`
+- `players.last_proxy_verify_time`
+- `proxy_auth_logs`
+
+启动时会自动创建缺失表，并对 `players` 缺失字段执行 `ALTER TABLE` 迁移。数据库、网络请求、BCrypt 均走异步路径。
+
+## Folia 注意事项
+
+AuthCode Paper/Folia 子服插件保留 Folia 兼容：
+
+- `paper-plugin.yml` 包含 `folia-supported: true`。
+- 玩家消息、踢出、药水效果等 Player API 操作通过 `SchedulerAdapter#runAtEntity` 切回安全上下文。
+- 数据库和网络请求不在主线程执行。
+
+## 测试建议
+
+正版玩家：使用真实正版账号连接 Velocity，Velocity 应执行在线验证，子服收到签名 payload 后自动放行。
+
+离线玩家：使用不存在正版档案的名字连接 Velocity，子服应提示 `/code 邀请码`，之后走 `/reg` 或 `/login`。
+
+伪造正版名：使用非号主客户端连接一个存在正版档案的名字，Velocity 会执行 `forceOnlineMode()`，Mojang 验证失败后不会进入子服。

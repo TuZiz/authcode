@@ -1,0 +1,79 @@
+# AuthCode 默认配置
+#
+# 重要安全提示：
+# 服务器 online-mode=false 时，Mojang 用户名查询只能判断这个名字是否存在正版账号，
+# 不能证明当前连接者就是该正版账号本人。存在正版名被冒用风险。
+# 如不接受该风险，请将 premium.auto-pass 设置为 false。
+
+settings:
+  auth-timeout-seconds: 120
+  allow-chat-before-auth: false
+  max-login-attempts: 5
+  password-min-length: 6
+  password-max-length: 32
+  kick-on-timeout: true
+
+proxy:
+  enabled: true
+
+  # NONE：
+  #   不使用 Velocity 插件传递状态。
+  #
+  # VELOCITY_PROXY_PLUGIN：
+  #   使用 AuthCode Velocity 插件传递 premium/offline 状态。
+  #
+  # MOJANG_NAME_LOOKUP：
+  #   旧模式，只查 Mojang 用户名，存在冒名风险，不推荐。
+  mode: VELOCITY_PROXY_PLUGIN
+
+  channel: "authcode:auth"
+  secret: "change-this-random-long-secret"
+  payload-ttl-seconds: 10
+  wait-timeout-seconds: 5
+
+  # true = 玩家进服后必须收到 Velocity 插件认证包，否则踢出
+  # false = 没收到 Velocity 包时按非正版处理
+  require-proxy-assertion: true
+
+premium:
+  auto-pass: true
+  check-mode: MOJANG_NAME_LOOKUP
+  failed-action: REQUIRE_CODE
+  mojang-api-timeout-ms: 3000
+  cache-minutes: 60
+  legacy-mojang-name-lookup-enabled: false
+  manual-override-enabled: false
+  warning: "MOJANG_NAME_LOOKUP 只能判断名字存在正版档案，不能证明当前连接者就是账号本人。推荐使用 VELOCITY_PROXY_PLUGIN。"
+
+lock:
+  block-move: true
+  block-break: true
+  block-place: true
+  block-attack: true
+  block-interact: true
+  block-drop: true
+  block-pickup: true
+  block-inventory: true
+  blindness: false
+  slowness: true
+
+commands:
+  allowed-before-auth:
+    - code
+    - reg
+    - register
+    - login
+    - l
+    - help
+
+storage:
+  type: sqlite
+  sqlite-file: "authcode.db"
+
+language:
+  default: zh_cn
+  file: "lang/zh_cn.yml"
+
+gui:
+  enabled: false
+  folder: "gui"

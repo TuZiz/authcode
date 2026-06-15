@@ -1,0 +1,8 @@
+{
+  "id": "authcode",
+  "name": "AuthCode",
+  "version": "${project.version}",
+  "description": "Velocity-side premium/offline assertion plugin for AuthCode.",
+  "authors": ["DreamStar"],
+  "main": "ym.authcode.velocity.AuthCodeVelocityPlugin"
+}

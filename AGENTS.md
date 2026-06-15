@@ -104,3 +104,25 @@
    - `gui/code_list.yml`
    - `gui/player_info.yml`
 4. 不允许在 Kotlin 中硬编码 GUI 文本。
+
+## Velocity 混合认证规范
+
+本项目包含两个插件：
+
+1. `authcode-velocity`：Velocity 端插件。
+2. `authcode-paper`：Paper / Folia 子服插件。
+
+Agent 修改时必须遵守：
+
+1. `premium=true` 只能由 Velocity 端 `forceOnlineMode` 成功后产生。
+2. Mojang 用户名查询只能用于决定是否 `forceOnlineMode`，不能作为最终正版证明。
+3. 子服不能直接信任 Mojang 用户名查询自动放行。
+4. 子服必须验证 Velocity payload 的 HMAC 签名。
+5. 子服必须验证 timestamp、nonce、uuid、username。
+6. 子服 Player 操作必须 Folia 安全。
+7. Velocity 登录事件不能阻塞。
+8. 后端服务器必须禁止直连。
+9. 语言文本不能硬编码。
+10. GUI 文本不能硬编码。
+11. 不允许删除 `VELOCITY_PROXY_PLUGIN` 模式。
+12. 不允许把 premium/offline 状态交给客户端决定。

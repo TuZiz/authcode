@@ -1,0 +1,21 @@
+settings:
+  require-velocity-offline-mode: true
+
+premium:
+  enabled: true
+  check-mode: MOJANG_NAME_LOOKUP
+  mojang-api-timeout-ms: 3000
+  cache-minutes: 60
+  failed-action: REQUIRE_OFFLINE
+
+offline:
+  allow-offline-players: true
+
+forward:
+  channel: "authcode:auth"
+  secret: "change-this-random-long-secret"
+  payload-ttl-seconds: 10
+  send-delay-ticks: 2
+
+security:
+  deny-premium-name-offline-spoof: true
