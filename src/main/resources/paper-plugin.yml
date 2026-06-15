@@ -1,0 +1,49 @@
+name: AuthCode
+version: 1.0.0
+main: ym.authcode.AuthCodePlugin
+api-version: '1.21'
+folia-supported: true
+authors:
+  - DreamStar
+description: Invite code auth plugin for Paper and Folia.
+
+commands:
+  code:
+    description: 输入邀请码
+    usage: /code <邀请码>
+  reg:
+    description: 注册密码
+    usage: /reg <密码> <确认密码>
+    aliases:
+      - register
+  login:
+    description: 登录
+    usage: /login <密码>
+    aliases:
+      - l
+  changepass:
+    description: 修改密码
+    usage: /changepass <旧密码> <新密码> <确认新密码>
+  authcode:
+    description: AuthCode 管理命令
+    usage: /authcode
+    aliases:
+      - acode
+
+permissions:
+  authcode.admin:
+    description: Allows all admin commands
+    default: op
+  authcode.admin.create:
+    default: op
+  authcode.admin.delete:
+    default: op
+  authcode.admin.list:
+    default: op
+  authcode.admin.reload:
+    default: op
+  authcode.admin.premium:
+    default: op
+  authcode.bypass:
+    description: Bypass auth check
+    default: op

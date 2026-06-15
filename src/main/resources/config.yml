@@ -1,0 +1,55 @@
+# AuthCode 默认配置
+#
+# 重要安全提示：
+# 服务器 online-mode=false 时，Mojang 用户名查询只能判断这个名字是否存在正版账号，
+# 不能证明当前连接者就是该正版账号本人。存在正版名被冒用风险。
+# 如不接受该风险，请将 premium.auto-pass 设置为 false。
+
+settings:
+  auth-timeout-seconds: 120
+  allow-chat-before-auth: false
+  max-login-attempts: 5
+  password-min-length: 6
+  password-max-length: 32
+  kick-on-timeout: true
+
+premium:
+  auto-pass: true
+  check-mode: MOJANG_NAME_LOOKUP
+  failed-action: REQUIRE_CODE
+  mojang-api-timeout-ms: 3000
+  cache-minutes: 60
+  warning: "offline-mode=false 下 Mojang 名字查询不能证明玩家真正拥有该正版账号，请自行承担风险。"
+
+lock:
+  block-move: true
+  block-break: true
+  block-place: true
+  block-attack: true
+  block-interact: true
+  block-drop: true
+  block-pickup: true
+  block-inventory: true
+  blindness: false
+  slowness: true
+
+commands:
+  allowed-before-auth:
+    - code
+    - reg
+    - register
+    - login
+    - l
+    - help
+
+storage:
+  type: sqlite
+  sqlite-file: "authcode.db"
+
+language:
+  default: zh_cn
+  file: "lang/zh_cn.yml"
+
+gui:
+  enabled: false
+  folder: "gui"

@@ -1,8 +1,0 @@
-name: authcode
-version: '${version}'
-
-main: ym.authcode.Authcode
-api-version: '26.1.2'
-load: POSTWORLD
-
-authors: [ ymxc ]
