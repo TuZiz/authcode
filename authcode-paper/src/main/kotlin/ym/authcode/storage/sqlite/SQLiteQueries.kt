@@ -2,23 +2,30 @@ package ym.authcode.storage.sqlite
 
 object SQLiteQueries {
     const val FIND_PLAYER_BY_LOWER_NAME = """
-        SELECT uuid, name, lower_name, password_hash, premium, registered, invited_by_code,
+        SELECT uuid, name, lower_name, original_name, internal_name, lower_internal_name, display_name,
+               password_hash, premium, registered, invited_by_code,
                register_ip, last_ip, auth_source, last_proxy_premium, last_proxy_verify_time,
                register_time, last_login_time, created_at, updated_at
         FROM players
-        WHERE lower_name = ?
+        WHERE lower_internal_name = ? OR lower_name = ?
     """
 
     const val SAVE_REGISTERED_PLAYER = """
         INSERT INTO players (
-            uuid, name, lower_name, password_hash, premium, registered, invited_by_code,
+            uuid, name, lower_name, original_name, internal_name, lower_internal_name, display_name,
+            password_hash, premium, registered, invited_by_code,
             register_ip, last_ip, register_time, last_login_time, auth_source,
             created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, NULL, 1, ?, ?, ?, ?, ?, 'OFFLINE_CODE', ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, 1, ?, ?, ?, ?, ?, 'OFFLINE_CODE', ?, ?)
         ON CONFLICT(lower_name) DO UPDATE SET
             uuid = excluded.uuid,
             name = excluded.name,
+            lower_name = excluded.lower_name,
+            original_name = excluded.original_name,
+            internal_name = excluded.internal_name,
+            lower_internal_name = excluded.lower_internal_name,
+            display_name = excluded.display_name,
             password_hash = excluded.password_hash,
             registered = 1,
             invited_by_code = excluded.invited_by_code,
@@ -39,24 +46,30 @@ object SQLiteQueries {
     const val UPDATE_LOGIN = """
         UPDATE players
         SET last_ip = ?, last_login_time = ?, updated_at = ?
-        WHERE lower_name = ?
+        WHERE lower_internal_name = ? OR lower_name = ?
     """
 
     const val UPDATE_PASSWORD = """
         UPDATE players
         SET password_hash = ?, updated_at = ?
-        WHERE lower_name = ?
+        WHERE lower_internal_name = ? OR lower_name = ?
     """
 
     const val SET_PREMIUM_OVERRIDE = """
         INSERT INTO players (
-            uuid, name, lower_name, password_hash, premium, registered, invited_by_code,
+            uuid, name, lower_name, original_name, internal_name, lower_internal_name, display_name,
+            password_hash, premium, registered, invited_by_code,
             register_ip, last_ip, register_time, last_login_time, auth_source,
             created_at, updated_at
         )
-        VALUES (NULL, ?, ?, NULL, ?, 0, NULL, NULL, NULL, 0, 0, 'MANUAL_OVERRIDE', ?, ?)
+        VALUES (NULL, ?, ?, ?, ?, ?, ?, NULL, ?, 0, NULL, NULL, NULL, 0, 0, 'MANUAL_OVERRIDE', ?, ?)
         ON CONFLICT(lower_name) DO UPDATE SET
             name = excluded.name,
+            lower_name = excluded.lower_name,
+            original_name = excluded.original_name,
+            internal_name = excluded.internal_name,
+            lower_internal_name = excluded.lower_internal_name,
+            display_name = excluded.display_name,
             premium = excluded.premium,
             auth_source = excluded.auth_source,
             updated_at = excluded.updated_at
@@ -64,14 +77,20 @@ object SQLiteQueries {
 
     const val UPDATE_PROXY_AUTH_STATUS = """
         INSERT INTO players (
-            uuid, name, lower_name, password_hash, premium, registered, invited_by_code,
+            uuid, name, lower_name, original_name, internal_name, lower_internal_name, display_name,
+            password_hash, premium, registered, invited_by_code,
             register_ip, last_ip, register_time, last_login_time, auth_source,
             last_proxy_premium, last_proxy_verify_time, created_at, updated_at
         )
-        VALUES (?, ?, ?, NULL, NULL, 0, NULL, NULL, NULL, 0, 0, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, 0, NULL, NULL, NULL, 0, 0, ?, ?, ?, ?, ?)
         ON CONFLICT(lower_name) DO UPDATE SET
             uuid = excluded.uuid,
             name = excluded.name,
+            lower_name = excluded.lower_name,
+            original_name = excluded.original_name,
+            internal_name = excluded.internal_name,
+            lower_internal_name = excluded.lower_internal_name,
+            display_name = excluded.display_name,
             auth_source = excluded.auth_source,
             last_proxy_premium = excluded.last_proxy_premium,
             last_proxy_verify_time = excluded.last_proxy_verify_time,
@@ -80,9 +99,10 @@ object SQLiteQueries {
 
     const val INSERT_PROXY_AUTH_LOG = """
         INSERT INTO proxy_auth_logs (
-            uuid, name, premium, auth_source, remote_ip, server_name, nonce, verify_time, created_at
+            uuid, name, original_name, internal_name, display_name, premium,
+            auth_source, remote_ip, server_name, nonce, verify_time, created_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """
 
     const val CREATE_INVITE_CODE = """

@@ -18,6 +18,9 @@ object AuthCodePayloadCodec {
             append("\"version\":").append(payload.version).append(',')
             append("\"username\":").append(jsonString(payload.username)).append(',')
             append("\"uuid\":").append(jsonString(payload.uuid)).append(',')
+            append("\"originalName\":").append(jsonString(payload.originalName)).append(',')
+            append("\"internalName\":").append(jsonString(payload.internalName)).append(',')
+            append("\"displayName\":").append(jsonString(payload.displayName)).append(',')
             append("\"premium\":").append(payload.premium).append(',')
             append("\"timestamp\":").append(payload.timestamp).append(',')
             append("\"nonce\":").append(jsonString(payload.nonce)).append(',')
@@ -32,6 +35,9 @@ object AuthCodePayloadCodec {
             version = values.required("version").toIntOrNull() ?: error("Invalid version"),
             username = values.required("username"),
             uuid = values.required("uuid"),
+            originalName = values.required("originalName"),
+            internalName = values.required("internalName"),
+            displayName = values.required("displayName"),
             premium = values.required("premium").toBooleanStrictOrNull() ?: error("Invalid premium"),
             timestamp = values.required("timestamp").toLongOrNull() ?: error("Invalid timestamp"),
             nonce = values.required("nonce"),

@@ -1,11 +1,15 @@
 package ym.authcode.velocity.config
 
+import ym.authcode.common.identity.OfflineNameOverflowMode
+import ym.authcode.common.identity.OfflineNameSettings
+import ym.authcode.common.identity.OfflineUuidSource
 import java.util.Locale
 
 data class VelocitySettings(
     val requireVelocityOfflineMode: Boolean,
     val premium: VelocityPremiumSettings,
     val offline: VelocityOfflineSettings,
+    val offlineName: OfflineNameSettings,
     val forward: VelocityForwardSettings,
     val security: VelocitySecuritySettings
 ) {
@@ -15,6 +19,7 @@ data class VelocitySettings(
                 requireVelocityOfflineMode = yaml.boolean("settings.require-velocity-offline-mode", true),
                 premium = VelocityPremiumSettings.from(yaml),
                 offline = VelocityOfflineSettings.from(yaml),
+                offlineName = VelocityOfflineNameSettings.from(yaml),
                 forward = VelocityForwardSettings.from(yaml),
                 security = VelocitySecuritySettings.from(yaml)
             )
@@ -62,6 +67,24 @@ data class VelocityOfflineSettings(
                 allowOfflinePlayers = yaml.boolean("offline.allow-offline-players", true)
             )
         }
+    }
+}
+
+object VelocityOfflineNameSettings {
+    fun from(yaml: SimpleYaml): OfflineNameSettings {
+        return OfflineNameSettings(
+            enabled = yaml.boolean("offline-name.enabled", true),
+            prefix = yaml.string("offline-name.prefix", "o_"),
+            avoidDoublePrefix = yaml.boolean("offline-name.avoid-double-prefix", true),
+            stripDisplayPrefix = yaml.boolean("offline-name.strip-display-prefix", true),
+            maxNameLength = yaml.long("offline-name.max-name-length", 16L).toInt().coerceIn(1, 16),
+            overflowMode = OfflineNameOverflowMode.parse(yaml.string("offline-name.overflow-mode", "HASH_SUFFIX")),
+            hashLength = yaml.long("offline-name.hash-length", 4L).toInt().coerceIn(1, 8),
+            avoidPremiumInternalName = yaml.boolean("offline-name.avoid-premium-internal-name", true),
+            uuidSource = OfflineUuidSource.parse(
+                yaml.string("offline-name.uuid-source", "PREFIXED_INTERNAL_NAME")
+            )
+        )
     }
 }
 

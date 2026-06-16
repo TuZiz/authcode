@@ -5,9 +5,13 @@ object SQLiteSchema {
         """
         CREATE TABLE IF NOT EXISTS players (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            uuid TEXT,
+            uuid TEXT UNIQUE,
             name TEXT NOT NULL,
             lower_name TEXT NOT NULL UNIQUE,
+            original_name TEXT,
+            internal_name TEXT,
+            lower_internal_name TEXT,
+            display_name TEXT,
             password_hash TEXT,
             premium INTEGER DEFAULT NULL,
             registered INTEGER NOT NULL DEFAULT 0,
@@ -54,6 +58,9 @@ object SQLiteSchema {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             uuid TEXT NOT NULL,
             name TEXT NOT NULL,
+            original_name TEXT,
+            internal_name TEXT,
+            display_name TEXT,
             premium INTEGER NOT NULL,
             auth_source TEXT NOT NULL,
             remote_ip TEXT NOT NULL,
@@ -64,6 +71,8 @@ object SQLiteSchema {
         )
         """.trimIndent(),
         "CREATE INDEX IF NOT EXISTS idx_players_lower_name ON players(lower_name)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_players_lower_internal_name ON players(lower_internal_name)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_players_uuid ON players(uuid) WHERE uuid IS NOT NULL",
         "CREATE INDEX IF NOT EXISTS idx_invite_codes_lower_code ON invite_codes(lower_code)",
         "CREATE INDEX IF NOT EXISTS idx_invite_code_uses_lower_code ON invite_code_uses(lower_code)",
         "CREATE INDEX IF NOT EXISTS idx_proxy_auth_logs_uuid ON proxy_auth_logs(uuid)",
@@ -73,7 +82,14 @@ object SQLiteSchema {
     val migrations = listOf(
         ColumnMigration("players", "auth_source", "TEXT"),
         ColumnMigration("players", "last_proxy_premium", "INTEGER"),
-        ColumnMigration("players", "last_proxy_verify_time", "INTEGER NOT NULL DEFAULT 0")
+        ColumnMigration("players", "last_proxy_verify_time", "INTEGER NOT NULL DEFAULT 0"),
+        ColumnMigration("players", "original_name", "TEXT"),
+        ColumnMigration("players", "internal_name", "TEXT"),
+        ColumnMigration("players", "lower_internal_name", "TEXT"),
+        ColumnMigration("players", "display_name", "TEXT"),
+        ColumnMigration("proxy_auth_logs", "original_name", "TEXT"),
+        ColumnMigration("proxy_auth_logs", "internal_name", "TEXT"),
+        ColumnMigration("proxy_auth_logs", "display_name", "TEXT")
     )
 }
 

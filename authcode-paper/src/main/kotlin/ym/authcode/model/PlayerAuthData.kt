@@ -4,8 +4,10 @@ import java.util.UUID
 
 data class PlayerAuthData(
     val uuid: UUID?,
-    val name: String,
-    val lowerName: String,
+    val originalName: String,
+    val internalName: String,
+    val lowerInternalName: String,
+    val displayName: String,
     val passwordHash: String?,
     val premium: Boolean?,
     val registered: Boolean,
@@ -19,4 +21,10 @@ data class PlayerAuthData(
     val lastLoginTime: Long,
     val createdAt: Long,
     val updatedAt: Long
-)
+) {
+    val name: String
+        get() = internalName
+
+    val lowerName: String
+        get() = lowerInternalName
+}

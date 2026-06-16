@@ -11,8 +11,10 @@ import ym.authcode.command.admin.AuthCodeCommand
 import ym.authcode.command.admin.sub.CreateCodeSubCommand
 import ym.authcode.command.admin.sub.DeleteCodeSubCommand
 import ym.authcode.command.admin.sub.GuiSubCommand
+import ym.authcode.command.admin.sub.IdentitySubCommand
 import ym.authcode.command.admin.sub.InfoCodeSubCommand
 import ym.authcode.command.admin.sub.ListCodeSubCommand
+import ym.authcode.command.admin.sub.NameCheckSubCommand
 import ym.authcode.command.admin.sub.PremiumSubCommand
 import ym.authcode.command.admin.sub.RandomCodeSubCommand
 import ym.authcode.command.admin.sub.ReloadSubCommand
@@ -24,6 +26,7 @@ import ym.authcode.config.ConfigManager
 import ym.authcode.gui.InviteGuiService
 import ym.authcode.lang.LangManager
 import ym.authcode.listener.AuthLockListener
+import ym.authcode.listener.IdentityDisplayListener
 import ym.authcode.listener.PlayerJoinListener
 import ym.authcode.listener.PlayerQuitListener
 import ym.authcode.listener.ProxyAuthMessageListener
@@ -33,9 +36,11 @@ import ym.authcode.scheduler.FoliaSchedulerAdapter
 import ym.authcode.scheduler.PaperSchedulerAdapter
 import ym.authcode.scheduler.SchedulerAdapter
 import ym.authcode.service.AuthService
+import ym.authcode.service.IdentityDisplayService
 import ym.authcode.service.InviteCodeService
 import ym.authcode.service.LockService
 import ym.authcode.service.PasswordService
+import ym.authcode.service.PlayerIdentityService
 import ym.authcode.service.PremiumCheckService
 import ym.authcode.service.ProxyNonceTracker
 import ym.authcode.storage.Storage
@@ -51,6 +56,7 @@ class PluginBootstrap(
     private lateinit var messageService: MessageService
     private lateinit var storage: Storage
     private lateinit var sessionCache: AuthSessionCache
+    private lateinit var identityService: PlayerIdentityService
     private lateinit var premiumCache: PremiumCache
     private lateinit var proxyNonceTracker: ProxyNonceTracker
 
@@ -71,6 +77,7 @@ class PluginBootstrap(
         messageService = MessageService(langManager, scheduler)
 
         sessionCache = AuthSessionCache()
+        identityService = PlayerIdentityService()
         premiumCache = PremiumCache()
         proxyNonceTracker = ProxyNonceTracker()
         storage = SQLiteStorage(plugin, configManager, scheduler)
@@ -92,6 +99,9 @@ class PluginBootstrap(
         if (::sessionCache.isInitialized) {
             sessionCache.clear()
         }
+        if (::identityService.isInitialized) {
+            identityService.clear()
+        }
         if (::premiumCache.isInitialized) {
             premiumCache.clear()
         }
@@ -112,6 +122,7 @@ class PluginBootstrap(
         val passwordService = PasswordService(plugin, scheduler)
         val premiumCheckService = PremiumCheckService(plugin, configManager, premiumCache, scheduler)
         val lockService = LockService(configManager, sessionCache, messageService, scheduler)
+        val identityDisplayService = IdentityDisplayService(configManager, messageService, scheduler)
         val authService = AuthService(
             plugin,
             configManager,
@@ -121,6 +132,8 @@ class PluginBootstrap(
             premiumCheckService,
             inviteCodeService,
             passwordService,
+            identityService,
+            identityDisplayService,
             lockService,
             messageService,
             scheduler
@@ -128,12 +141,13 @@ class PluginBootstrap(
 
         registerListeners(
             PlayerJoinListener(authService),
-            PlayerQuitListener(lockService),
+            PlayerQuitListener(lockService, identityService),
             AuthLockListener(configManager, sessionCache, messageService),
+            IdentityDisplayListener(configManager, identityService, identityDisplayService),
             inviteGuiService
         )
         registerProxyChannel(authService)
-        registerCommands(authService, inviteCodeService, inviteGuiService)
+        registerCommands(authService, inviteCodeService, inviteGuiService, premiumCheckService, identityDisplayService)
     }
 
     private fun registerListeners(vararg listeners: Listener) {
@@ -156,7 +170,9 @@ class PluginBootstrap(
     private fun registerCommands(
         authService: AuthService,
         inviteCodeService: InviteCodeService,
-        inviteGuiService: InviteGuiService
+        inviteGuiService: InviteGuiService,
+        premiumCheckService: PremiumCheckService,
+        identityDisplayService: IdentityDisplayService
     ) {
         registerCommand("code", CodeCommand(authService, messageService))
         registerCommand("reg", RegisterCommand(authService, messageService), aliases = listOf("register"))
@@ -173,7 +189,15 @@ class PluginBootstrap(
                 DeleteCodeSubCommand(inviteCodeService, messageService),
                 GuiSubCommand(inviteGuiService, messageService),
                 ReloadSubCommand(configManager, langManager, messageService, scheduler),
-                PremiumSubCommand(storage, messageService)
+                PremiumSubCommand(storage, messageService),
+                IdentitySubCommand(identityService, identityDisplayService, storage, messageService),
+                NameCheckSubCommand(
+                    configManager,
+                    premiumCheckService,
+                    identityDisplayService,
+                    storage,
+                    messageService
+                )
             )
         )
         registerCommand("authcode", adminCommand, adminCommand, aliases = listOf("acode"))

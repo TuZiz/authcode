@@ -46,6 +46,10 @@ permissions:
     default: op
   authcode.admin.premium:
     default: op
+  authcode.admin.identity:
+    default: op
+  authcode.admin.namecheck:
+    default: op
   authcode.bypass:
     description: Bypass auth check
     default: op

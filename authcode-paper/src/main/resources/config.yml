@@ -37,6 +37,8 @@ proxy:
 
 premium:
   auto-pass: true
+  skip-code: true
+  skip-password: true
   check-mode: MOJANG_NAME_LOOKUP
   failed-action: REQUIRE_CODE
   mojang-api-timeout-ms: 3000
@@ -44,6 +46,30 @@ premium:
   legacy-mojang-name-lookup-enabled: false
   manual-override-enabled: false
   warning: "MOJANG_NAME_LOOKUP 只能判断名字存在正版档案，不能证明当前连接者就是账号本人。推荐使用 VELOCITY_PROXY_PLUGIN。"
+
+offline-name:
+  enabled: true
+  prefix: "o_"
+  avoid-double-prefix: true
+  strip-display-prefix: true
+  max-name-length: 16
+  overflow-mode: "HASH_SUFFIX"
+  hash-length: 4
+  avoid-premium-internal-name: true
+  uuid-source: "PREFIXED_INTERNAL_NAME"
+
+identity-display:
+  enabled: true
+  premium-format: "{identity_prefix} {display_name}"
+  offline-format: "{identity_prefix} {display_name}"
+  apply-chat: true
+  apply-tab: true
+  apply-display-name: true
+  apply-placeholder: true
+
+offline-auth:
+  require-code: true
+  require-register: true
 
 invite-code:
   defaults:

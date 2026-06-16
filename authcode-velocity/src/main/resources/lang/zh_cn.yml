@@ -6,3 +6,6 @@ velocity:
   offline-detected: "{prefix}<yellow>你将以离线账号进入服务器，进入后需要邀请码验证。</yellow>"
   mojang-failed-deny: "{prefix}<red>正版状态查询失败，请稍后重试。</red>"
   config-error: "{prefix}<red>AuthCode Velocity 配置错误，请联系管理员。</red>"
+  invalid-name: "{prefix}<red>你的名字包含不支持的字符，请更换名字后重试。</red>"
+  name-too-long: "{prefix}<red>你的名字加上离线前缀后过长，请换一个短一点的名字。</red>"
+  internal-name-conflict: "{prefix}<red>生成离线内部名失败，请换一个名字后重试。</red>"

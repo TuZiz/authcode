@@ -1,12 +1,18 @@
 package ym.authcode.config
 
 import org.bukkit.configuration.file.FileConfiguration
+import ym.authcode.common.identity.OfflineNameOverflowMode
+import ym.authcode.common.identity.OfflineNameSettings
+import ym.authcode.common.identity.OfflineUuidSource
 import java.util.Locale
 
 data class PluginSettings(
     val auth: AuthSettings,
     val proxy: ProxySettings,
     val premium: PremiumSettings,
+    val offlineName: OfflineNameSettings,
+    val identityDisplay: IdentityDisplaySettings,
+    val offlineAuth: OfflineAuthSettings,
     val inviteCode: InviteCodeSettings,
     val lock: LockSettings,
     val commands: CommandSettings,
@@ -20,6 +26,9 @@ data class PluginSettings(
                 auth = AuthSettings.from(config),
                 proxy = ProxySettings.from(config),
                 premium = PremiumSettings.from(config),
+                offlineName = OfflineNameConfig.from(config),
+                identityDisplay = IdentityDisplaySettings.from(config),
+                offlineAuth = OfflineAuthSettings.from(config),
                 inviteCode = InviteCodeSettings.from(config),
                 lock = LockSettings.from(config),
                 commands = CommandSettings.from(config),
@@ -114,6 +123,8 @@ data class AuthSettings(
 
 data class PremiumSettings(
     val autoPass: Boolean,
+    val skipCode: Boolean,
+    val skipPassword: Boolean,
     val checkMode: String,
     val failedAction: PremiumFailedAction,
     val mojangApiTimeoutMs: Long,
@@ -125,6 +136,8 @@ data class PremiumSettings(
         fun from(config: FileConfiguration): PremiumSettings {
             return PremiumSettings(
                 autoPass = config.getBoolean("premium.auto-pass", true),
+                skipCode = config.getBoolean("premium.skip-code", true),
+                skipPassword = config.getBoolean("premium.skip-password", true),
                 checkMode = config.getString("premium.check-mode", "MOJANG_NAME_LOOKUP") ?: "MOJANG_NAME_LOOKUP",
                 failedAction = PremiumFailedAction.parse(config.getString("premium.failed-action")),
                 mojangApiTimeoutMs = config.getLong("premium.mojang-api-timeout-ms", 3000L),
@@ -134,6 +147,66 @@ data class PremiumSettings(
                     false
                 ),
                 manualOverrideEnabled = config.getBoolean("premium.manual-override-enabled", false)
+            )
+        }
+    }
+}
+
+object OfflineNameConfig {
+    fun from(config: FileConfiguration): OfflineNameSettings {
+        return OfflineNameSettings(
+            enabled = config.getBoolean("offline-name.enabled", true),
+            prefix = config.getString("offline-name.prefix", "o_") ?: "o_",
+            avoidDoublePrefix = config.getBoolean("offline-name.avoid-double-prefix", true),
+            stripDisplayPrefix = config.getBoolean("offline-name.strip-display-prefix", true),
+            maxNameLength = config.getInt("offline-name.max-name-length", 16).coerceIn(1, 16),
+            overflowMode = OfflineNameOverflowMode.parse(config.getString("offline-name.overflow-mode", "HASH_SUFFIX")),
+            hashLength = config.getInt("offline-name.hash-length", 4).coerceIn(1, 8),
+            avoidPremiumInternalName = config.getBoolean("offline-name.avoid-premium-internal-name", true),
+            uuidSource = OfflineUuidSource.parse(config.getString("offline-name.uuid-source", "PREFIXED_INTERNAL_NAME"))
+        )
+    }
+}
+
+data class IdentityDisplaySettings(
+    val enabled: Boolean,
+    val premiumFormat: String,
+    val offlineFormat: String,
+    val applyChat: Boolean,
+    val applyTab: Boolean,
+    val applyDisplayName: Boolean,
+    val applyPlaceholder: Boolean
+) {
+    companion object {
+        fun from(config: FileConfiguration): IdentityDisplaySettings {
+            return IdentityDisplaySettings(
+                enabled = config.getBoolean("identity-display.enabled", true),
+                premiumFormat = config.getString(
+                    "identity-display.premium-format",
+                    "{identity_prefix} {display_name}"
+                ) ?: "{identity_prefix} {display_name}",
+                offlineFormat = config.getString(
+                    "identity-display.offline-format",
+                    "{identity_prefix} {display_name}"
+                ) ?: "{identity_prefix} {display_name}",
+                applyChat = config.getBoolean("identity-display.apply-chat", true),
+                applyTab = config.getBoolean("identity-display.apply-tab", true),
+                applyDisplayName = config.getBoolean("identity-display.apply-display-name", true),
+                applyPlaceholder = config.getBoolean("identity-display.apply-placeholder", true)
+            )
+        }
+    }
+}
+
+data class OfflineAuthSettings(
+    val requireCode: Boolean,
+    val requireRegister: Boolean
+) {
+    companion object {
+        fun from(config: FileConfiguration): OfflineAuthSettings {
+            return OfflineAuthSettings(
+                requireCode = config.getBoolean("offline-auth.require-code", true),
+                requireRegister = config.getBoolean("offline-auth.require-register", true)
             )
         }
     }

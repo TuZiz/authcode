@@ -11,6 +11,17 @@ premium:
 offline:
   allow-offline-players: true
 
+offline-name:
+  enabled: true
+  prefix: "o_"
+  avoid-double-prefix: true
+  strip-display-prefix: true
+  max-name-length: 16
+  overflow-mode: "HASH_SUFFIX"
+  hash-length: 4
+  avoid-premium-internal-name: true
+  uuid-source: "PREFIXED_INTERNAL_NAME"
+
 forward:
   channel: "authcode:auth"
   secret: "change-this-random-long-secret"

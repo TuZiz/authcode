@@ -1,5 +1,6 @@
 package ym.authcode.storage
 
+import ym.authcode.common.model.PlayerIdentity
 import ym.authcode.model.InviteCode
 import ym.authcode.model.InviteCodeUse
 import ym.authcode.model.InviteUseResult
@@ -14,9 +15,7 @@ interface Storage {
     fun findPlayerByLowerName(lowerName: String): CompletableFuture<PlayerAuthData?>
 
     fun saveRegisteredPlayer(
-        uuid: UUID,
-        name: String,
-        lowerName: String,
+        identity: PlayerIdentity,
         passwordHash: String,
         invitedByCode: String,
         ip: String,
@@ -30,10 +29,7 @@ interface Storage {
     fun setPremiumOverride(name: String, lowerName: String, premium: Boolean, now: Long): CompletableFuture<Void>
 
     fun updateProxyAuthStatus(
-        uuid: UUID,
-        name: String,
-        lowerName: String,
-        premium: Boolean,
+        identity: PlayerIdentity,
         authSource: String,
         now: Long
     ): CompletableFuture<Void>

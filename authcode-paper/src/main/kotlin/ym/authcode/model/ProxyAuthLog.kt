@@ -4,7 +4,9 @@ import java.util.UUID
 
 data class ProxyAuthLog(
     val uuid: UUID,
-    val name: String,
+    val originalName: String,
+    val internalName: String,
+    val displayName: String,
     val premium: Boolean,
     val authSource: String,
     val remoteIp: String,

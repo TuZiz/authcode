@@ -3,6 +3,7 @@ package ym.authcode.storage.sqlite
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
 import org.bukkit.plugin.java.JavaPlugin
+import ym.authcode.common.model.PlayerIdentity
 import ym.authcode.config.ConfigManager
 import ym.authcode.model.InviteCode
 import ym.authcode.model.InviteCodeUse
@@ -59,15 +60,13 @@ class SQLiteStorage(
     }
 
     override fun saveRegisteredPlayer(
-        uuid: UUID,
-        name: String,
-        lowerName: String,
+        identity: PlayerIdentity,
         passwordHash: String,
         invitedByCode: String,
         ip: String,
         now: Long
     ): CompletableFuture<Void> {
-        return runAsync { players.saveRegistered(uuid, name, lowerName, passwordHash, invitedByCode, ip, now) }
+        return runAsync { players.saveRegistered(identity, passwordHash, invitedByCode, ip, now) }
     }
 
     override fun updateLogin(lowerName: String, ip: String, now: Long): CompletableFuture<Void> {
@@ -88,14 +87,11 @@ class SQLiteStorage(
     }
 
     override fun updateProxyAuthStatus(
-        uuid: UUID,
-        name: String,
-        lowerName: String,
-        premium: Boolean,
+        identity: PlayerIdentity,
         authSource: String,
         now: Long
     ): CompletableFuture<Void> {
-        return runAsync { players.updateProxyAuthStatus(uuid, name, lowerName, premium, authSource, now) }
+        return runAsync { players.updateProxyAuthStatus(identity, authSource, now) }
     }
 
     override fun recordProxyAuthLog(log: ProxyAuthLog): CompletableFuture<Void> {
