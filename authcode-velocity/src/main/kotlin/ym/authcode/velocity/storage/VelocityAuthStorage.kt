@@ -426,7 +426,7 @@ class VelocityAuthStorage(
         val databasePath = dataDirectory.resolve(settingsProvider().storage.sqliteFile)
         Files.createDirectories(databasePath.parent ?: dataDirectory)
         val connection = DriverManager.getConnection("jdbc:sqlite:${databasePath.toAbsolutePath()}")
-        connection.prepareStatement("PRAGMA busy_timeout = 5000").use { it.executeUpdate() }
+        connection.prepareStatement("PRAGMA busy_timeout = 5000").use { it.execute() }
         return connection
     }
 
