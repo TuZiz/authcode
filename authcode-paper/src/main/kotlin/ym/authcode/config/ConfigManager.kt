@@ -13,13 +13,13 @@ class ConfigManager(
         ensureDefaultFiles()
         plugin.reloadConfig()
         settings = PluginSettings.from(plugin.config)
-        ensureGuiFolder()
+        ensureGuiFiles()
     }
 
     fun reload() {
         plugin.reloadConfig()
         settings = PluginSettings.from(plugin.config)
-        ensureGuiFolder()
+        ensureGuiFiles()
     }
 
     fun current(): PluginSettings {
@@ -32,21 +32,33 @@ class ConfigManager(
         }
         plugin.saveDefaultConfig()
         saveResourceIfMissing("lang/zh_cn.yml")
-        File(plugin.dataFolder, "gui").mkdirs()
+        ensureGuiFiles("gui")
     }
 
-    fun ensureGuiFolder() {
-        File(plugin.dataFolder, currentOrDefaultGuiFolder()).mkdirs()
+    fun ensureGuiFiles(folder: String = currentOrDefaultGuiFolder()) {
+        File(plugin.dataFolder, folder).mkdirs()
+        saveResourceIfMissing("gui/main.yml", "$folder/main.yml")
+        saveResourceIfMissing("gui/code_list.yml", "$folder/code_list.yml")
+        saveResourceIfMissing("gui/player_info.yml", "$folder/player_info.yml")
     }
 
     private fun currentOrDefaultGuiFolder(): String {
         return settings?.gui?.folder ?: "gui"
     }
 
-    private fun saveResourceIfMissing(path: String) {
-        val file = File(plugin.dataFolder, path)
+    private fun saveResourceIfMissing(resourcePath: String, targetPath: String = resourcePath) {
+        val file = File(plugin.dataFolder, targetPath)
         if (!file.exists()) {
-            plugin.saveResource(path, false)
+            file.parentFile?.mkdirs()
+            if (resourcePath == targetPath) {
+                plugin.saveResource(resourcePath, false)
+                return
+            }
+            plugin.getResource(resourcePath)?.use { input ->
+                file.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            } ?: plugin.logger.warning("Missing bundled resource: $resourcePath")
         }
     }
 }

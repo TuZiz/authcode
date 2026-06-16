@@ -1,6 +1,7 @@
 package ym.authcode.storage.sqlite
 
 import ym.authcode.model.InviteCode
+import ym.authcode.model.InviteCodeUse
 import ym.authcode.model.InviteUseResult
 import java.sql.Connection
 import java.sql.ResultSet
@@ -62,6 +63,21 @@ class SQLiteInviteCodes(
                         codes.add(mapCode(result))
                     }
                     return codes
+                }
+            }
+        }
+    }
+
+    fun listUses(lowerCode: String): List<InviteCodeUse> {
+        dataSource.connection.use { connection ->
+            connection.prepareStatement(SQLiteQueries.LIST_INVITE_CODE_USES).use { statement ->
+                statement.setString(1, lowerCode)
+                statement.executeQuery().use { result ->
+                    val uses = mutableListOf<InviteCodeUse>()
+                    while (result.next()) {
+                        uses.add(mapUse(result))
+                    }
+                    return uses
                 }
             }
         }
@@ -152,6 +168,17 @@ class SQLiteInviteCodes(
             enabled = result.getInt("enabled") == 1,
             createdAt = result.getLong("created_at"),
             updatedAt = result.getLong("updated_at")
+        )
+    }
+
+    private fun mapUse(result: ResultSet): InviteCodeUse {
+        return InviteCodeUse(
+            code = result.getString("code"),
+            lowerCode = result.getString("lower_code"),
+            playerUuid = UUID.fromString(result.getString("player_uuid")),
+            playerName = result.getString("player_name"),
+            ip = result.getString("ip"),
+            useTime = result.getLong("use_time")
         )
     }
 }

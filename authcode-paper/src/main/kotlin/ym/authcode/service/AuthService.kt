@@ -69,6 +69,16 @@ class AuthService(
         if (!settings.enabled || settings.mode != ProxyMode.VELOCITY_PROXY_PLUGIN || channel != settings.channel) {
             return
         }
+        scheduler.runAtEntity(player) {
+            handleProxyMessageAtEntity(player, channel, message)
+        }
+    }
+
+    private fun handleProxyMessageAtEntity(player: Player, channel: String, message: ByteArray) {
+        val settings = configManager.current().proxy
+        if (!settings.enabled || settings.mode != ProxyMode.VELOCITY_PROXY_PLUGIN || channel != settings.channel) {
+            return
+        }
         val snapshot = PlayerSnapshot.from(player)
         val payload = runCatching { AuthCodePayloadCodec.decode(message) }.getOrElse {
             plugin.logger.warning("Invalid Velocity payload for ${snapshot.name}: ${it.message}")
@@ -261,7 +271,7 @@ class AuthService(
 
     private fun scheduleProxyAssertionTimeout(player: Player, snapshot: PlayerSnapshot) {
         val delay = configManager.current().proxy.waitTimeoutSeconds.coerceAtLeast(1L) * 20L
-        scheduler.runAtEntityDelayed(player, delay) {
+        val task = scheduler.runAtEntityDelayed(player, delay) {
             if (sessionCache.state(snapshot.uuid) != AuthState.CHECKING_PROXY) {
                 return@runAtEntityDelayed
             }
@@ -278,6 +288,7 @@ class AuthService(
                 continueWithoutPremium(player, snapshot, data, "proxy.verified-offline")
             }
         }
+        sessionCache.setProxyAssertionTask(snapshot.uuid, task)
     }
 
     private fun validateProxyPayload(snapshot: PlayerSnapshot, payload: ProxyAuthPayload): String? {

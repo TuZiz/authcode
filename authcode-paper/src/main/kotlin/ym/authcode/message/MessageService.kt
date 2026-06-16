@@ -39,6 +39,9 @@ class MessageService(
             ComponentUtil.render(it, langManager.prefix(), variables)
         }
 
+    fun renderRaw(raw: String, variables: Map<String, String> = emptyMap()) =
+        ComponentUtil.render(raw, langManager.prefix(), variables)
+
     fun plain(key: String): String {
         return langManager.getLines(key).firstOrNull() ?: key
     }

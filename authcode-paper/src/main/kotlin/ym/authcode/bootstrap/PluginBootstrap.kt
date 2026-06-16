@@ -6,9 +6,11 @@ import org.bukkit.event.Listener
 import org.bukkit.plugin.java.JavaPlugin
 import ym.authcode.cache.AuthSessionCache
 import ym.authcode.cache.PremiumCache
+import ym.authcode.command.RuntimePluginCommand
 import ym.authcode.command.admin.AuthCodeCommand
 import ym.authcode.command.admin.sub.CreateCodeSubCommand
 import ym.authcode.command.admin.sub.DeleteCodeSubCommand
+import ym.authcode.command.admin.sub.GuiSubCommand
 import ym.authcode.command.admin.sub.InfoCodeSubCommand
 import ym.authcode.command.admin.sub.ListCodeSubCommand
 import ym.authcode.command.admin.sub.PremiumSubCommand
@@ -19,6 +21,7 @@ import ym.authcode.command.player.CodeCommand
 import ym.authcode.command.player.LoginCommand
 import ym.authcode.command.player.RegisterCommand
 import ym.authcode.config.ConfigManager
+import ym.authcode.gui.InviteGuiService
 import ym.authcode.lang.LangManager
 import ym.authcode.listener.AuthLockListener
 import ym.authcode.listener.PlayerJoinListener
@@ -37,6 +40,7 @@ import ym.authcode.service.PremiumCheckService
 import ym.authcode.service.ProxyNonceTracker
 import ym.authcode.storage.Storage
 import ym.authcode.storage.sqlite.SQLiteStorage
+import java.util.Locale
 
 class PluginBootstrap(
     private val plugin: JavaPlugin
@@ -103,7 +107,8 @@ class PluginBootstrap(
     }
 
     private fun registerRuntime() {
-        val inviteCodeService = InviteCodeService(storage)
+        val inviteCodeService = InviteCodeService(storage, configManager)
+        val inviteGuiService = InviteGuiService(plugin, configManager, inviteCodeService, messageService, scheduler)
         val passwordService = PasswordService(plugin, scheduler)
         val premiumCheckService = PremiumCheckService(plugin, configManager, premiumCache, scheduler)
         val lockService = LockService(configManager, sessionCache, messageService, scheduler)
@@ -124,10 +129,11 @@ class PluginBootstrap(
         registerListeners(
             PlayerJoinListener(authService),
             PlayerQuitListener(lockService),
-            AuthLockListener(configManager, sessionCache, messageService)
+            AuthLockListener(configManager, sessionCache, messageService),
+            inviteGuiService
         )
         registerProxyChannel(authService)
-        registerCommands(authService, inviteCodeService)
+        registerCommands(authService, inviteCodeService, inviteGuiService)
     }
 
     private fun registerListeners(vararg listeners: Listener) {
@@ -147,31 +153,44 @@ class PluginBootstrap(
         plugin.logger.info("Registered AuthCode proxy channel: ${proxy.channel}")
     }
 
-    private fun registerCommands(authService: AuthService, inviteCodeService: InviteCodeService) {
+    private fun registerCommands(
+        authService: AuthService,
+        inviteCodeService: InviteCodeService,
+        inviteGuiService: InviteGuiService
+    ) {
         registerCommand("code", CodeCommand(authService, messageService))
-        registerCommand("reg", RegisterCommand(authService, messageService))
-        registerCommand("login", LoginCommand(authService, messageService))
+        registerCommand("reg", RegisterCommand(authService, messageService), aliases = listOf("register"))
+        registerCommand("login", LoginCommand(authService, messageService), aliases = listOf("l"))
         registerCommand("changepass", ChangePasswordCommand(authService, messageService))
 
         val adminCommand = AuthCodeCommand(
             messageService,
             listOf(
-                CreateCodeSubCommand(inviteCodeService, messageService),
-                RandomCodeSubCommand(inviteCodeService, messageService),
+                CreateCodeSubCommand(inviteCodeService, configManager, messageService),
+                RandomCodeSubCommand(inviteCodeService, configManager, messageService),
                 ListCodeSubCommand(inviteCodeService, messageService),
                 InfoCodeSubCommand(inviteCodeService, messageService),
                 DeleteCodeSubCommand(inviteCodeService, messageService),
+                GuiSubCommand(inviteGuiService, messageService),
                 ReloadSubCommand(configManager, langManager, messageService, scheduler),
                 PremiumSubCommand(storage, messageService)
             )
         )
-        registerCommand("authcode", adminCommand, adminCommand)
+        registerCommand("authcode", adminCommand, adminCommand, aliases = listOf("acode"))
     }
 
-    private fun registerCommand(name: String, executor: CommandExecutor, tabCompleter: TabCompleter? = null) {
+    private fun registerCommand(
+        name: String,
+        executor: CommandExecutor,
+        tabCompleter: TabCompleter? = null,
+        aliases: List<String> = emptyList()
+    ) {
         val command = plugin.getCommand(name)
         if (command == null) {
-            plugin.logger.warning("Command $name is missing in paper-plugin.yml")
+            plugin.server.commandMap.register(
+                plugin.name.lowercase(Locale.ROOT),
+                RuntimePluginCommand(name, aliases, executor, tabCompleter)
+            )
             return
         }
         command.setExecutor(executor)

@@ -40,6 +40,8 @@ permissions:
     default: op
   authcode.admin.list:
     default: op
+  authcode.admin.gui:
+    default: op
   authcode.admin.reload:
     default: op
   authcode.admin.premium:

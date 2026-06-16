@@ -11,21 +11,36 @@ class PaperSchedulerAdapter(
     private val tasks = ConcurrentLinkedQueue<TaskHandle>()
 
     override fun runAsync(task: () -> Unit): TaskHandle {
-        return track(PaperTaskHandle(plugin.server.scheduler.runTaskAsynchronously(plugin, Runnable {
-            runSafely(task)
-        })))
+        return track(
+            PaperTaskHandle(
+                plugin.server.scheduler.runTaskAsynchronously(plugin, Runnable {
+                    runSafely(task)
+                }),
+                plugin
+            )
+        )
     }
 
     override fun runGlobal(task: () -> Unit): TaskHandle {
-        return track(PaperTaskHandle(plugin.server.scheduler.runTask(plugin, Runnable {
-            runSafely(task)
-        })))
+        return track(
+            PaperTaskHandle(
+                plugin.server.scheduler.runTask(plugin, Runnable {
+                    runSafely(task)
+                }),
+                plugin
+            )
+        )
     }
 
     override fun runGlobalDelayed(delayTicks: Long, task: () -> Unit): TaskHandle {
-        return track(PaperTaskHandle(plugin.server.scheduler.runTaskLater(plugin, Runnable {
-            runSafely(task)
-        }, delayTicks.coerceAtLeast(1L))))
+        return track(
+            PaperTaskHandle(
+                plugin.server.scheduler.runTaskLater(plugin, Runnable {
+                    runSafely(task)
+                }, delayTicks.coerceAtLeast(1L)),
+                plugin
+            )
+        )
     }
 
     override fun runAtEntity(entity: Entity, task: () -> Unit): TaskHandle {
@@ -57,9 +72,14 @@ class PaperSchedulerAdapter(
 }
 
 private class PaperTaskHandle(
-    private val task: BukkitTask
+    private val task: BukkitTask,
+    private val plugin: JavaPlugin
 ) : TaskHandle {
     override fun cancel() {
-        task.cancel()
+        runCatching {
+            task.cancel()
+        }.onFailure {
+            plugin.logger.warning("Failed to cancel Paper scheduled task: ${it.message}")
+        }
     }
 }

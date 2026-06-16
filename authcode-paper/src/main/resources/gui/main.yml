@@ -1,0 +1,29 @@
+title: "<dark_gray>AuthCode 管理"
+rows: 3
+layout:
+  - "#########"
+  - "###C#R###"
+  - "####X####"
+items:
+  "#":
+    material: "BLACK_STAINED_GLASS_PANE"
+    name: " "
+  "C":
+    material: "CHEST"
+    name: "<aqua>邀请码列表"
+    lore:
+      - "<gray>查看邀请码和被邀请玩家"
+      - "<yellow>点击打开"
+    action: "code-list"
+  "R":
+    material: "EMERALD"
+    name: "<green>生成默认邀请码"
+    lore:
+      - "<gray>按配置随机生成 4-6 位数字邀请码"
+      - "<gray>默认 7 天过期，1 名玩家可用"
+      - "<yellow>点击生成"
+    action: "create-default"
+  "X":
+    material: "BARRIER"
+    name: "<red>关闭"
+    action: "close"

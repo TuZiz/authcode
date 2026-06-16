@@ -1,6 +1,7 @@
 package ym.authcode.storage
 
 import ym.authcode.model.InviteCode
+import ym.authcode.model.InviteCodeUse
 import ym.authcode.model.InviteUseResult
 import ym.authcode.model.PlayerAuthData
 import ym.authcode.model.ProxyAuthLog
@@ -46,6 +47,8 @@ interface Storage {
     fun findInviteCode(lowerCode: String): CompletableFuture<InviteCode?>
 
     fun listInviteCodes(): CompletableFuture<List<InviteCode>>
+
+    fun listInviteCodeUses(lowerCode: String): CompletableFuture<List<InviteCodeUse>>
 
     fun useInviteCode(
         code: String,

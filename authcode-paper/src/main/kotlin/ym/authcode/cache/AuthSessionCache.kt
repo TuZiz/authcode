@@ -24,10 +24,11 @@ class AuthSessionCache {
 
     fun authenticate(uuid: UUID) {
         sessions.compute(uuid) { _, current ->
-            current?.timeoutTask?.cancel()
+            cancelTasks(current)
             (current ?: AuthSession(AuthState.AUTHENTICATED)).copy(
                 state = AuthState.AUTHENTICATED,
-                timeoutTask = null
+                timeoutTask = null,
+                proxyAssertionTask = null
             )
         }
     }
@@ -58,18 +59,39 @@ class AuthSessionCache {
 
     fun setTimeoutTask(uuid: UUID, task: TaskHandle) {
         sessions.compute(uuid) { _, current ->
-            current?.timeoutTask?.cancel()
+            cancelSafely(current?.timeoutTask)
             (current ?: AuthSession(AuthState.CHECKING)).copy(timeoutTask = task)
         }
     }
 
+    fun setProxyAssertionTask(uuid: UUID, task: TaskHandle) {
+        sessions.compute(uuid) { _, current ->
+            cancelSafely(current?.proxyAssertionTask)
+            (current ?: AuthSession(AuthState.CHECKING)).copy(proxyAssertionTask = task)
+        }
+    }
+
     fun remove(uuid: UUID) {
-        sessions.remove(uuid)?.timeoutTask?.cancel()
+        cancelTasks(sessions.remove(uuid))
     }
 
     fun clear() {
-        sessions.values.forEach { it.timeoutTask?.cancel() }
+        sessions.values.forEach { cancelTasks(it) }
         sessions.clear()
+    }
+
+    private fun cancelTasks(session: AuthSession?) {
+        cancelSafely(session?.timeoutTask)
+        cancelSafely(session?.proxyAssertionTask)
+    }
+
+    private fun cancelSafely(task: TaskHandle?) {
+        if (task == null) {
+            return
+        }
+        runCatching {
+            task.cancel()
+        }
     }
 }
 
@@ -77,5 +99,6 @@ data class AuthSession(
     val state: AuthState,
     val invitedByCode: String? = null,
     val loginAttempts: Int = 0,
-    val timeoutTask: TaskHandle? = null
+    val timeoutTask: TaskHandle? = null,
+    val proxyAssertionTask: TaskHandle? = null
 )

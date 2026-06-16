@@ -1,0 +1,53 @@
+title: "<dark_gray>被邀请玩家 <gray>{code} {page}/{pages}"
+rows: 6
+layout:
+  - "#########"
+  - "#IIPPPPP#"
+  - "#IIPPPPP#"
+  - "#IIPPPPP#"
+  - "#IIPPPPP#"
+  - "#B##P#N#X"
+content:
+  char: "P"
+items:
+  "#":
+    material: "BLACK_STAINED_GLASS_PANE"
+    name: " "
+  "I":
+    material: "BOOK"
+    name: "<aqua>邀请码 <white>{code}</white>"
+    lore:
+      - "<gray>剩余: <white>{remaining}</white>/<white>{max}</white>"
+      - "<gray>已用: <white>{used}</white>"
+      - "<gray>已过期: <white>{expired}</white>"
+      - "<gray>启用: <white>{enabled}</white>"
+      - "<gray>创建者: <white>{creator}</white>"
+      - "<gray>创建时间: <white>{created}</white>"
+      - "<gray>过期时间: <white>{expire}</white>"
+  "B":
+    material: "ARROW"
+    name: "<yellow>返回列表"
+    action: "back-code-list"
+  "P":
+    material: "ARROW"
+    name: "<aqua>上一页"
+    lore:
+      - "<gray>当前: <white>{page}</white>/<white>{pages}</white>"
+    action: "previous-page"
+  "N":
+    material: "ARROW"
+    name: "<aqua>下一页"
+    lore:
+      - "<gray>当前: <white>{page}</white>/<white>{pages}</white>"
+    action: "next-page"
+  "X":
+    material: "BARRIER"
+    name: "<red>关闭"
+    action: "close"
+player-item:
+  material: "PLAYER_HEAD"
+  name: "<green>{player}"
+  lore:
+    - "<gray>UUID: <white>{uuid}</white>"
+    - "<gray>IP: <white>{ip}</white>"
+    - "<gray>使用时间: <white>{use_time}</white>"

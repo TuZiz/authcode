@@ -7,6 +7,7 @@ data class PluginSettings(
     val auth: AuthSettings,
     val proxy: ProxySettings,
     val premium: PremiumSettings,
+    val inviteCode: InviteCodeSettings,
     val lock: LockSettings,
     val commands: CommandSettings,
     val storage: StorageSettings,
@@ -19,11 +20,34 @@ data class PluginSettings(
                 auth = AuthSettings.from(config),
                 proxy = ProxySettings.from(config),
                 premium = PremiumSettings.from(config),
+                inviteCode = InviteCodeSettings.from(config),
                 lock = LockSettings.from(config),
                 commands = CommandSettings.from(config),
                 storage = StorageSettings.from(config),
                 language = LanguageSettings.from(config),
                 gui = GuiSettings.from(config)
+            )
+        }
+    }
+}
+
+data class InviteCodeSettings(
+    val defaultMaxUses: Int,
+    val defaultExpireAfter: String?,
+    val randomMinLength: Int,
+    val randomMaxLength: Int,
+    val randomDigitsOnly: Boolean
+) {
+    companion object {
+        fun from(config: FileConfiguration): InviteCodeSettings {
+            val minLength = config.getInt("invite-code.random.min-length", 4).coerceIn(1, 32)
+            val maxLength = config.getInt("invite-code.random.max-length", 6).coerceIn(minLength, 32)
+            return InviteCodeSettings(
+                defaultMaxUses = config.getInt("invite-code.defaults.max-uses", 1).coerceAtLeast(1),
+                defaultExpireAfter = config.getString("invite-code.defaults.expire-after", "7d"),
+                randomMinLength = minLength,
+                randomMaxLength = maxLength,
+                randomDigitsOnly = config.getBoolean("invite-code.random.digits-only", true)
             )
         }
     }
@@ -47,7 +71,7 @@ data class ProxySettings(
                 secret = config.getString("proxy.secret", "change-this-random-long-secret")
                     ?: "change-this-random-long-secret",
                 payloadTtlSeconds = config.getLong("proxy.payload-ttl-seconds", 10L),
-                waitTimeoutSeconds = config.getLong("proxy.wait-timeout-seconds", 5L),
+                waitTimeoutSeconds = config.getLong("proxy.wait-timeout-seconds", 12L),
                 requireProxyAssertion = config.getBoolean("proxy.require-proxy-assertion", true)
             )
         }
@@ -207,7 +231,7 @@ data class GuiSettings(
     companion object {
         fun from(config: FileConfiguration): GuiSettings {
             return GuiSettings(
-                enabled = config.getBoolean("gui.enabled", false),
+                enabled = config.getBoolean("gui.enabled", true),
                 folder = config.getString("gui.folder", "gui") ?: "gui"
             )
         }

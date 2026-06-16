@@ -1,0 +1,51 @@
+title: "<dark_gray>邀请码列表 <gray>{page}/{pages}"
+rows: 6
+layout:
+  - "#########"
+  - "#CCCCCCC#"
+  - "#CCCCCCC#"
+  - "#CCCCCCC#"
+  - "#CCCCCCC#"
+  - "#B##P#N#X"
+content:
+  char: "C"
+items:
+  "#":
+    material: "BLACK_STAINED_GLASS_PANE"
+    name: " "
+  "B":
+    material: "ARROW"
+    name: "<yellow>返回"
+    action: "back-main"
+  "P":
+    material: "ARROW"
+    name: "<aqua>上一页"
+    lore:
+      - "<gray>当前: <white>{page}</white>/<white>{pages}</white>"
+    action: "previous-page"
+  "N":
+    material: "ARROW"
+    name: "<aqua>下一页"
+    lore:
+      - "<gray>当前: <white>{page}</white>/<white>{pages}</white>"
+    action: "next-page"
+  "X":
+    material: "BARRIER"
+    name: "<red>关闭"
+    action: "close"
+code-item:
+  material: "PAPER"
+  name: "<aqua>邀请码 <white>{code}</white>"
+  lore:
+    - "<gray>剩余: <white>{remaining}</white>/<white>{max}</white>"
+    - "<gray>已用: <white>{used}</white>"
+    - "<gray>已过期: <white>{expired}</white>"
+    - "<gray>启用: <white>{enabled}</white>"
+    - "<gray>创建者: <white>{creator}</white>"
+    - "<gray>创建时间: <white>{created}</white>"
+    - "<gray>过期时间: <white>{expire}</white>"
+    - ""
+    - "<yellow>左键查看被邀请玩家"
+    - "<red>右键删除邀请码"
+  left-click-action: "view-players"
+  right-click-action: "delete-code"

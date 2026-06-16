@@ -29,7 +29,7 @@ proxy:
   channel: "authcode:auth"
   secret: "change-this-random-long-secret"
   payload-ttl-seconds: 10
-  wait-timeout-seconds: 5
+  wait-timeout-seconds: 12
 
   # true = 玩家进服后必须收到 Velocity 插件认证包，否则踢出
   # false = 没收到 Velocity 包时按非正版处理
@@ -44,6 +44,15 @@ premium:
   legacy-mojang-name-lookup-enabled: false
   manual-override-enabled: false
   warning: "MOJANG_NAME_LOOKUP 只能判断名字存在正版档案，不能证明当前连接者就是账号本人。推荐使用 VELOCITY_PROXY_PLUGIN。"
+
+invite-code:
+  defaults:
+    max-uses: 1
+    expire-after: "7d"
+  random:
+    min-length: 4
+    max-length: 6
+    digits-only: true
 
 lock:
   block-move: true
@@ -75,5 +84,5 @@ language:
   file: "lang/zh_cn.yml"
 
 gui:
-  enabled: false
+  enabled: true
   folder: "gui"

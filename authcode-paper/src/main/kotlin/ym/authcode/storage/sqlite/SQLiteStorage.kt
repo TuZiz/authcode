@@ -5,6 +5,7 @@ import com.zaxxer.hikari.HikariDataSource
 import org.bukkit.plugin.java.JavaPlugin
 import ym.authcode.config.ConfigManager
 import ym.authcode.model.InviteCode
+import ym.authcode.model.InviteCodeUse
 import ym.authcode.model.InviteUseResult
 import ym.authcode.model.PlayerAuthData
 import ym.authcode.model.ProxyAuthLog
@@ -115,6 +116,10 @@ class SQLiteStorage(
 
     override fun listInviteCodes(): CompletableFuture<List<InviteCode>> {
         return supplyAsync { inviteCodes.list() }
+    }
+
+    override fun listInviteCodeUses(lowerCode: String): CompletableFuture<List<InviteCodeUse>> {
+        return supplyAsync { inviteCodes.listUses(lowerCode) }
     }
 
     override fun useInviteCode(

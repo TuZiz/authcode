@@ -110,6 +110,14 @@ object SQLiteQueries {
         LIMIT 100
     """
 
+    const val LIST_INVITE_CODE_USES = """
+        SELECT code, lower_code, player_uuid, player_name, ip, use_time
+        FROM invite_code_uses
+        WHERE lower_code = ?
+        ORDER BY use_time DESC
+        LIMIT 100
+    """
+
     const val UPDATE_INVITE_USED = """
         UPDATE invite_codes
         SET used_count = used_count + 1, updated_at = ?
