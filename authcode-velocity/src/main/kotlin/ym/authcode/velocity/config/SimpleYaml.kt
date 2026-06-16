@@ -3,7 +3,9 @@ package ym.authcode.velocity.config
 class SimpleYaml(
     content: String
 ) {
-    private val values: Map<String, String> = parse(content)
+    private val parsed: ParsedYaml = parse(content)
+    private val values: Map<String, String> = parsed.values
+    private val lists: Map<String, List<String>> = parsed.lists
 
     fun string(path: String, default: String): String {
         return values[path] ?: default
@@ -23,8 +25,21 @@ class SimpleYaml(
         return values[path]?.toLongOrNull() ?: default
     }
 
-    private fun parse(content: String): Map<String, String> {
+    fun stringList(path: String, default: List<String> = emptyList()): List<String> {
+        lists[path]?.let { return it }
+        return values[path]
+            ?.takeIf { it.startsWith("[") && it.endsWith("]") }
+            ?.removePrefix("[")
+            ?.removeSuffix("]")
+            ?.split(",")
+            ?.map { unquote(it.trim()) }
+            ?.filter { it.isNotBlank() }
+            ?: default
+    }
+
+    private fun parse(content: String): ParsedYaml {
         val parsed = linkedMapOf<String, String>()
+        val parsedLists = linkedMapOf<String, MutableList<String>>()
         val pathStack = mutableListOf<Pair<Int, String>>()
         content.lineSequence().forEach { rawLine ->
             if (rawLine.isBlank()) {
@@ -37,6 +52,13 @@ class SimpleYaml(
             val indent = rawLine.takeWhile { it == ' ' }.length
             while (pathStack.isNotEmpty() && pathStack.last().first >= indent) {
                 pathStack.removeAt(pathStack.lastIndex)
+            }
+            if (trimmed.startsWith("- ")) {
+                val prefix = pathStack.joinToString(".") { it.second }
+                if (prefix.isNotEmpty()) {
+                    parsedLists.getOrPut(prefix) { mutableListOf() } += unquote(trimmed.removePrefix("-").trim())
+                }
+                return@forEach
             }
             if (trimmed.endsWith(":")) {
                 pathStack += indent to trimmed.removeSuffix(":").trim()
@@ -52,7 +74,7 @@ class SimpleYaml(
             val path = if (prefix.isEmpty()) key else "$prefix.$key"
             parsed[path] = value
         }
-        return parsed
+        return ParsedYaml(parsed, parsedLists)
     }
 
     private fun unquote(value: String): String {
@@ -68,4 +90,9 @@ class SimpleYaml(
         }
         return value
     }
+
+    private data class ParsedYaml(
+        val values: Map<String, String>,
+        val lists: Map<String, List<String>>
+    )
 }

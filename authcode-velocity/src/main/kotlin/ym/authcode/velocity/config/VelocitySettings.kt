@@ -34,6 +34,10 @@ data class VelocitySettings(
 data class SameNameLoginSettings(
     val enabled: Boolean,
     val routeMode: SameNameRouteMode,
+    val defaultRoute: SameNameDefaultRoute,
+    val premiumHosts: Set<String>,
+    val offlineHosts: Set<String>,
+    val allowDualProfileSameOriginalName: Boolean,
     val unknownNamePolicy: UnknownNamePolicy,
     val allowOfflineFallbackForPremiumBoundName: Boolean,
     val blockClientReservedPrefix: Boolean,
@@ -45,6 +49,13 @@ data class SameNameLoginSettings(
             return SameNameLoginSettings(
                 enabled = yaml.boolean("same-name-login.enabled", true),
                 routeMode = SameNameRouteMode.parse(yaml.string("same-name-login.route-mode", "DATABASE_FIRST")),
+                defaultRoute = SameNameDefaultRoute.parse(yaml.string("same-name-login.default-route", "DENY")),
+                premiumHosts = yaml.stringList("same-name-login.premium-hosts").mapNotNull { normalizeHost(it) }.toSet(),
+                offlineHosts = yaml.stringList("same-name-login.offline-hosts").mapNotNull { normalizeHost(it) }.toSet(),
+                allowDualProfileSameOriginalName = yaml.boolean(
+                    "same-name-login.allow-dual-profile-same-original-name",
+                    true
+                ),
                 unknownNamePolicy = UnknownNamePolicy.parse(
                     yaml.string("same-name-login.unknown-name-policy", "OFFLINE_PENDING")
                 ),
@@ -56,6 +67,21 @@ data class SameNameLoginSettings(
                 reservedPrefix = yaml.string("same-name-login.reserved-prefix", yaml.string("offline-name.prefix", "o_")),
                 pending = SameNamePendingSettings.from(yaml)
             )
+        }
+
+        private fun normalizeHost(value: String): String? {
+            val trimmed = value.trim()
+            if (trimmed.isBlank()) {
+                return null
+            }
+            return trimmed
+                .removePrefix("http://")
+                .removePrefix("https://")
+                .substringBefore("/")
+                .trim()
+                .trimEnd('.')
+                .lowercase(Locale.ROOT)
+                .ifBlank { null }
         }
     }
 }
@@ -80,11 +106,24 @@ data class SameNamePendingSettings(
 }
 
 enum class SameNameRouteMode {
-    DATABASE_FIRST;
+    DATABASE_FIRST,
+    VIRTUAL_HOST;
 
     companion object {
         fun parse(value: String): SameNameRouteMode {
             return entries.firstOrNull { it.name == value.uppercase(Locale.ROOT) } ?: DATABASE_FIRST
+        }
+    }
+}
+
+enum class SameNameDefaultRoute {
+    PREMIUM,
+    OFFLINE,
+    DENY;
+
+    companion object {
+        fun parse(value: String): SameNameDefaultRoute {
+            return entries.firstOrNull { it.name == value.uppercase(Locale.ROOT) } ?: DENY
         }
     }
 }

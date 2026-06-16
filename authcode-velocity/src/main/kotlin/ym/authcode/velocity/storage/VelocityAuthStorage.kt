@@ -31,26 +31,43 @@ class VelocityAuthStorage(
                 schemaStatements.forEach { sql ->
                     connection.prepareStatement(sql).use { it.executeUpdate() }
                 }
+                migrateAuthProfileDualTypeConstraint(connection)
             }
         }
     }
 
-    fun findProfileByOriginalLower(originalNameLower: String): CompletableFuture<AuthProfile?> {
+    fun findPremiumProfileByOriginalLower(originalNameLower: String): CompletableFuture<AuthProfile?> {
+        val lowerName = originalNameLower.lowercase(Locale.ROOT)
         return supplyAsync {
             connection().use { connection ->
-                connection.prepareStatement(
-                    """
-                    SELECT id, original_name, original_name_lower, internal_name, display_name,
-                           uuid, auth_type, premium_bound, created_at, updated_at
-                    FROM auth_profile
-                    WHERE original_name_lower = ?
-                    """.trimIndent()
-                ).use { statement ->
-                    statement.setString(1, originalNameLower)
-                    statement.executeQuery().use { result ->
-                        if (result.next()) mapProfile(result) else null
-                    }
-                }
+                findProfileByOriginalLowerAndType(connection, lowerName, AuthProfileType.PREMIUM)
+            }
+        }
+    }
+
+    fun findOfflineProfileByOriginalLower(originalNameLower: String): CompletableFuture<AuthProfile?> {
+        val lowerName = originalNameLower.lowercase(Locale.ROOT)
+        return supplyAsync {
+            connection().use { connection ->
+                findProfileByOriginalLowerAndType(connection, lowerName, AuthProfileType.OFFLINE)
+            }
+        }
+    }
+
+    fun findProfilesByOriginalLower(originalNameLower: String): CompletableFuture<List<AuthProfile>> {
+        val lowerName = originalNameLower.lowercase(Locale.ROOT)
+        return supplyAsync {
+            connection().use { connection ->
+                findProfilesByOriginalLower(connection, lowerName)
+            }
+        }
+    }
+
+    fun findProfileByInternalName(name: String): CompletableFuture<AuthProfile?> {
+        val lowerName = name.lowercase(Locale.ROOT)
+        return supplyAsync {
+            connection().use { connection ->
+                findProfileByInternalName(connection, lowerName)
             }
         }
     }
@@ -59,20 +76,7 @@ class VelocityAuthStorage(
         val lowerName = name.lowercase(Locale.ROOT)
         return supplyAsync {
             connection().use { connection ->
-                connection.prepareStatement(
-                    """
-                    SELECT id, original_name, original_name_lower, internal_name, display_name,
-                           uuid, auth_type, premium_bound, created_at, updated_at
-                    FROM auth_profile
-                    WHERE original_name_lower = ? OR lower(internal_name) = ?
-                    """.trimIndent()
-                ).use { statement ->
-                    statement.setString(1, lowerName)
-                    statement.setString(2, lowerName)
-                    statement.executeQuery().use { result ->
-                        if (result.next()) mapProfile(result) else null
-                    }
-                }
+                findProfileByInternalName(connection, lowerName) ?: findPreferredProfileByOriginalLower(connection, lowerName)
             }
         }
     }
@@ -170,7 +174,11 @@ class VelocityAuthStorage(
         return supplyAsync {
             connection().use { connection ->
                 upsertOfflineProfile(connection, originalName, internalName, displayName, uuid, now)
-                findProfileByOriginalLower(connection, originalName.lowercase(Locale.ROOT))
+                findProfileByOriginalLowerAndType(
+                    connection,
+                    originalName.lowercase(Locale.ROOT),
+                    AuthProfileType.OFFLINE
+                )
                     ?: error("Offline profile was not saved")
             }
         }
@@ -187,7 +195,11 @@ class VelocityAuthStorage(
                 try {
                     upsertOfflineProfile(connection, pending.username, pending.offlineName, pending.username, uuid, now)
                     deletePending(connection, pending.id)
-                    val profile = findProfileByOriginalLower(connection, pending.usernameLower)
+                    val profile = findProfileByOriginalLowerAndType(
+                        connection,
+                        pending.usernameLower,
+                        AuthProfileType.OFFLINE
+                    )
                         ?: error("Offline pending profile was not saved")
                     connection.commit()
                     profile
@@ -207,7 +219,7 @@ class VelocityAuthStorage(
             connection().use { connection ->
                 connection.autoCommit = false
                 try {
-                    findProfileByOriginalLower(connection, lowerName)?.let { old ->
+                    findProfileByOriginalLowerAndType(connection, lowerName, AuthProfileType.PREMIUM)?.let { old ->
                         recordMigration(connection, old, AuthProfileType.PREMIUM, "PREMIUM_BIND", now)
                     }
                     connection.prepareStatement(
@@ -217,12 +229,11 @@ class VelocityAuthStorage(
                             uuid, auth_type, premium_bound, created_at, updated_at
                         )
                         VALUES (?, ?, ?, ?, ?, 'PREMIUM', 1, ?, ?)
-                        ON CONFLICT(original_name_lower) DO UPDATE SET
+                        ON CONFLICT(original_name_lower, auth_type) DO UPDATE SET
                             original_name = excluded.original_name,
                             internal_name = excluded.internal_name,
                             display_name = excluded.display_name,
                             uuid = excluded.uuid,
-                            auth_type = 'PREMIUM',
                             premium_bound = 1,
                             updated_at = excluded.updated_at
                         """.trimIndent()
@@ -236,7 +247,7 @@ class VelocityAuthStorage(
                         statement.setLong(7, now)
                         statement.executeUpdate()
                     }
-                    val profile = findProfileByOriginalLower(connection, lowerName)
+                    val profile = findProfileByOriginalLowerAndType(connection, lowerName, AuthProfileType.PREMIUM)
                         ?: error("Premium profile was not saved")
                     connection.commit()
                     profile
@@ -256,7 +267,7 @@ class VelocityAuthStorage(
             connection().use { connection ->
                 connection.autoCommit = false
                 try {
-                    val old = findProfileByOriginalLower(connection, lowerName) ?: run {
+                    val old = findProfileByOriginalLowerAndType(connection, lowerName, AuthProfileType.PREMIUM) ?: run {
                         connection.commit()
                         return@supplyAsync false
                     }
@@ -342,12 +353,11 @@ class VelocityAuthStorage(
                 uuid, auth_type, premium_bound, created_at, updated_at
             )
             VALUES (?, ?, ?, ?, ?, 'OFFLINE', 0, ?, ?)
-            ON CONFLICT(original_name_lower) DO UPDATE SET
+            ON CONFLICT(original_name_lower, auth_type) DO UPDATE SET
                 original_name = excluded.original_name,
                 internal_name = excluded.internal_name,
                 display_name = excluded.display_name,
                 uuid = excluded.uuid,
-                auth_type = 'OFFLINE',
                 premium_bound = 0,
                 updated_at = excluded.updated_at
             """.trimIndent()
@@ -363,18 +373,68 @@ class VelocityAuthStorage(
         }
     }
 
-    private fun findProfileByOriginalLower(connection: Connection, originalNameLower: String): AuthProfile? {
+    private fun findPreferredProfileByOriginalLower(connection: Connection, originalNameLower: String): AuthProfile? {
+        return findProfilesByOriginalLower(connection, originalNameLower)
+            .sortedWith(compareBy<AuthProfile> { if (it.authType == AuthProfileType.PREMIUM) 0 else 1 }
+                .thenByDescending { it.premiumBound }
+                .thenByDescending { it.updatedAt })
+            .firstOrNull()
+    }
+
+    private fun findProfileByOriginalLowerAndType(
+        connection: Connection,
+        originalNameLower: String,
+        authType: AuthProfileType
+    ): AuthProfile? {
+        connection.prepareStatement(
+            """
+            SELECT id, original_name, original_name_lower, internal_name, display_name,
+                   uuid, auth_type, premium_bound, created_at, updated_at
+            FROM auth_profile
+            WHERE original_name_lower = ? AND auth_type = ?
+            """.trimIndent()
+        ).use { statement ->
+            statement.setString(1, originalNameLower)
+            statement.setString(2, authType.name)
+            statement.executeQuery().use { result ->
+                return if (result.next()) mapProfile(result) else null
+            }
+        }
+    }
+
+    private fun findProfileByInternalName(connection: Connection, internalNameLower: String): AuthProfile? {
+        connection.prepareStatement(
+            """
+            SELECT id, original_name, original_name_lower, internal_name, display_name,
+                   uuid, auth_type, premium_bound, created_at, updated_at
+            FROM auth_profile
+            WHERE lower(internal_name) = ?
+            """.trimIndent()
+        ).use { statement ->
+            statement.setString(1, internalNameLower)
+            statement.executeQuery().use { result ->
+                return if (result.next()) mapProfile(result) else null
+            }
+        }
+    }
+
+    private fun findProfilesByOriginalLower(connection: Connection, originalNameLower: String): List<AuthProfile> {
         connection.prepareStatement(
             """
             SELECT id, original_name, original_name_lower, internal_name, display_name,
                    uuid, auth_type, premium_bound, created_at, updated_at
             FROM auth_profile
             WHERE original_name_lower = ?
+            ORDER BY CASE auth_type WHEN 'PREMIUM' THEN 0 ELSE 1 END, updated_at DESC
             """.trimIndent()
         ).use { statement ->
             statement.setString(1, originalNameLower)
             statement.executeQuery().use { result ->
-                return if (result.next()) mapProfile(result) else null
+                val profiles = mutableListOf<AuthProfile>()
+                while (result.next()) {
+                    profiles += mapProfile(result)
+                }
+                return profiles
             }
         }
     }
@@ -419,6 +479,58 @@ class VelocityAuthStorage(
             statement.setString(8, reason)
             statement.setLong(9, now)
             statement.executeUpdate()
+        }
+    }
+
+    private fun migrateAuthProfileDualTypeConstraint(connection: Connection) {
+        val existingSql = tableSql(connection, "auth_profile") ?: return
+        val normalizedSql = existingSql.replace(Regex("\\s+"), "").uppercase(Locale.ROOT)
+        if ("UNIQUE(ORIGINAL_NAME_LOWER,AUTH_TYPE)" in normalizedSql) {
+            return
+        }
+        val previousAutoCommit = connection.autoCommit
+        connection.autoCommit = false
+        try {
+            connection.createStatement().use { statement ->
+                statement.executeUpdate("DROP TABLE IF EXISTS auth_profile_new")
+                statement.executeUpdate(authProfileTableSql("auth_profile_new"))
+                statement.executeUpdate(
+                    """
+                    INSERT INTO auth_profile_new (
+                        id, original_name, original_name_lower, internal_name, display_name,
+                        uuid, auth_type, premium_bound, created_at, updated_at
+                    )
+                    SELECT id, original_name, original_name_lower, internal_name, display_name,
+                           uuid, auth_type, premium_bound, created_at, updated_at
+                    FROM auth_profile
+                    ORDER BY id
+                    """.trimIndent()
+                )
+                statement.executeUpdate("DROP TABLE auth_profile")
+                statement.executeUpdate("ALTER TABLE auth_profile_new RENAME TO auth_profile")
+            }
+            connection.commit()
+            logger.info("Migrated auth_profile unique constraint to (original_name_lower, auth_type).")
+        } catch (throwable: Throwable) {
+            connection.rollback()
+            throw throwable
+        } finally {
+            connection.autoCommit = previousAutoCommit
+        }
+    }
+
+    private fun tableSql(connection: Connection, tableName: String): String? {
+        connection.prepareStatement(
+            """
+            SELECT sql
+            FROM sqlite_master
+            WHERE type = 'table' AND name = ?
+            """.trimIndent()
+        ).use { statement ->
+            statement.setString(1, tableName)
+            statement.executeQuery().use { result ->
+                return if (result.next()) result.getString("sql") else null
+            }
         }
     }
 
@@ -485,21 +597,26 @@ class VelocityAuthStorage(
         )
     }
 
-    private val schemaStatements = listOf(
-        """
-        CREATE TABLE IF NOT EXISTS auth_profile (
+    private fun authProfileTableSql(tableName: String): String {
+        return """
+        CREATE TABLE IF NOT EXISTS $tableName (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           original_name TEXT NOT NULL,
-          original_name_lower TEXT NOT NULL UNIQUE,
+          original_name_lower TEXT NOT NULL,
           internal_name TEXT NOT NULL UNIQUE,
           display_name TEXT NOT NULL,
           uuid TEXT NOT NULL UNIQUE,
           auth_type TEXT NOT NULL,
           premium_bound INTEGER NOT NULL DEFAULT 0,
           created_at INTEGER NOT NULL,
-          updated_at INTEGER NOT NULL
+          updated_at INTEGER NOT NULL,
+          UNIQUE(original_name_lower, auth_type)
         )
-        """.trimIndent(),
+        """.trimIndent()
+    }
+
+    private val schemaStatements = listOf(
+        authProfileTableSql("auth_profile"),
         """
         CREATE TABLE IF NOT EXISTS pending_offline_rename (
           id INTEGER PRIMARY KEY AUTOINCREMENT,

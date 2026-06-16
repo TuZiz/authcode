@@ -52,15 +52,18 @@ AuthCode 支持同一个客户端输入名进入，但后端身份分离。
 
 注意：
 
-单入口模式下，同一个 `clientName` 不能同时无条件支持正版和离线。Velocity 在 `PreLoginEvent` 阶段必须先决定 `forceOnlineMode()` 或 `forceOfflineMode()`。
+单入口模式下，同一个 `clientName` 不能自动同时区分正版意图和离线意图。Velocity 在 `PreLoginEvent` 阶段必须先决定 `forceOnlineMode()` 或 `forceOfflineMode()`。
 
-因此本插件采用数据库绑定关系优先：
+推荐使用双入口：
 
-- 已绑定正版的名字，走 Mojang 正版验证。
-- 已存在离线映射的名字，走离线映射。
-- 没有记录的名字，默认按离线身份创建映射。
+- `mc.example.com`：正版入口
+- `offline.example.com`：离线入口
 
-如果真正正版玩家第一次进服被创建为离线映射，管理员可以在 Velocity 端使用：
+两个地址都指向同一个 Velocity，由 `same-name-login.route-mode: "VIRTUAL_HOST"` 按连接 host 决定路由。
+
+如果仍使用 `DATABASE_FIRST`，同一个 `originalName` 同时存在 `PREMIUM` 和 `OFFLINE` 档案时，插件会明确优先 `PREMIUM`；这种单入口模式不建议用于同名双档案。
+
+管理员也可以在 Velocity 端使用：
 
 ```text
 /authcode premium bind <name>
@@ -68,13 +71,7 @@ AuthCode 支持同一个客户端输入名进入，但后端身份分离。
 
 将该名字绑定为正版。绑定会查询 Mojang 档案并写入正版 UUID；查询失败或名字不存在时不会写入。
 
-如果服主要让同一个名字既能正版进，又能离线进，需要使用：
-
-1. 双入口 / 不同域名 / 不同端口区分正版入口和离线入口
-2. 明确的离线意图标记
-3. 管理员手动切换绑定状态
-
-当前版本实现的是“数据库绑定优先 + 离线内部改名 + 管理员正版绑定”方案。
+当前版本实现的是“虚拟 host 路由 + 同名双档案 + 离线内部改名 + Velocity 签名断言”方案。
 
 ## 首次离线进入体验
 
@@ -96,11 +93,15 @@ Velocity `PreLoginEvent` 规则：
 
 1. 校验用户名：`^[A-Za-z0-9_]{3,16}$`
 2. 拒绝客户端直接使用保留前缀，例如 `o_`
-3. 查询 Velocity 数据库 `auth_profile.original_name_lower`
-4. 若 `auth_type=PREMIUM` 且 `premium_bound=true`，执行 `forceOnlineMode()`
-5. 若 `auth_type=OFFLINE`，执行 `forceOfflineMode()`，并在 `GameProfileRequestEvent` 改为 `internalName`
-6. 若存在未过期且 IP 匹配的 pending，确认 pending、写入 `auth_profile`，然后执行离线改名
-7. 若没有记录，按配置创建 pending 并踢出，或直接创建离线档案
+3. 若 `route-mode=VIRTUAL_HOST`，先根据连接 host 得到路由意图：
+   - `premium-hosts`：只查询/创建 `PREMIUM` 档案
+   - `offline-hosts`：只查询/创建 `OFFLINE` 档案
+   - 未知 host：使用 `default-route`，可为 `PREMIUM` / `OFFLINE` / `DENY`
+4. 正版意图：查询 `auth_profile(original_name_lower, auth_type=PREMIUM)`；若存在且 `premium_bound=true`，执行 `forceOnlineMode()`；若不存在且 `premium.enabled=true`，查询 Mojang 档案并创建 `PREMIUM` 档案
+5. 离线意图：查询 `auth_profile(original_name_lower, auth_type=OFFLINE)`；若存在，执行 `forceOfflineMode()`，并在 `GameProfileRequestEvent` 改为 `internalName`
+6. 离线意图下若存在未过期且 IP 匹配的 pending，确认 pending、写入 `auth_profile OFFLINE`，然后执行离线改名
+7. 离线意图下若没有记录，按配置创建 pending 并踢出，或直接创建离线档案
+8. 若 `route-mode=DATABASE_FIRST`，同名双档案存在时优先 `PREMIUM`，再回退 `OFFLINE`
 
 `premium=true` 只会在 Velocity `forceOnlineMode()` 成功并进入 `PostLoginEvent` 后产生。Paper/Folia 子服不会信任 Mojang 用户名查询，只信任 Velocity 签名 payload。
 
@@ -113,7 +114,13 @@ Velocity `PreLoginEvent` 规则：
 ```yml
 same-name-login:
   enabled: true
-  route-mode: "DATABASE_FIRST"
+  route-mode: "VIRTUAL_HOST"
+  default-route: "DENY"
+  premium-hosts:
+    - "mc.example.com"
+  offline-hosts:
+    - "offline.example.com"
+  allow-dual-profile-same-original-name: true
   unknown-name-policy: "OFFLINE_PENDING"
   allow-offline-fallback-for-premium-bound-name: false
   block-client-reserved-prefix: true
@@ -200,7 +207,7 @@ premium_bound = true
 uuid = Mojang UUID
 ```
 
-如果原来存在离线映射，会写入 `auth_profile_migration_log`。不会自动删除 Paper/Folia 子服上的离线注册密码。
+如果原来存在离线映射，不会覆盖或删除 `OFFLINE` 档案；同一个 `original_name_lower` 可以同时保留 `PREMIUM` 与 `OFFLINE` 两条记录。不会自动删除 Paper/Folia 子服上的离线注册密码。
 
 `premium unbind` 当前策略是删除 Velocity 的 `auth_profile` 正版档案。后续该名字再次登录时，会按未知名字重新创建离线 pending。
 
@@ -223,14 +230,15 @@ Velocity 路由库包含：
 CREATE TABLE IF NOT EXISTS auth_profile (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   original_name TEXT NOT NULL,
-  original_name_lower TEXT NOT NULL UNIQUE,
+  original_name_lower TEXT NOT NULL,
   internal_name TEXT NOT NULL UNIQUE,
   display_name TEXT NOT NULL,
   uuid TEXT NOT NULL UNIQUE,
   auth_type TEXT NOT NULL,
   premium_bound INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
+  updated_at INTEGER NOT NULL,
+  UNIQUE(original_name_lower, auth_type)
 );
 ```
 
@@ -248,7 +256,7 @@ CREATE TABLE IF NOT EXISTS pending_offline_rename (
 
 身份原则：
 
-- 登录路由优先查 `original_name_lower`
+- VIRTUAL_HOST 登录路由按意图查询 `original_name_lower + auth_type`
 - 后端核心数据使用 `uuid` 或 `internalName`
 - `displayName` 只用于显示，不作为身份依据
 
@@ -266,12 +274,11 @@ AuthCode Paper/Folia 子服保留 Folia 兼容：
 
 至少测试：
 
-1. 未知名字第一次离线进入：创建 pending 并踢出提示重进
-2. 未知名字第二次离线进入：改名为 `o_名字`，写入 `auth_profile OFFLINE`
-3. 已存在离线映射再次进入：不再踢出，直接离线改名
-4. Velocity 执行 `/authcode premium bind <name>` 后，档案切换为 `PREMIUM`
-5. 已绑定正版使用正版客户端进入：`forceOnlineMode()` 成功，Paper 自动放行
-6. 已绑定正版使用离线客户端进入：Mojang 验证失败，不能降级为离线
+1. `offline.example.com` + `Liu_Liu_QAQ`：首次创建 pending 并提示重进
+2. `offline.example.com` + `Liu_Liu_QAQ`：二次进入后 internalName 为 `o_Liu_Liu_QAQ`，显示 `[离线] Liu_Liu_QAQ`
+3. `mc.example.com` + `Liu_Liu_QAQ`：正版验证成功后 internalName 为 `Liu_Liu_QAQ`，显示 `[正版] Liu_Liu_QAQ`
+4. 两个档案同时存在：`auth_profile` 中有 `PREMIUM` 和 `OFFLINE` 两条 `original_name_lower=liu_liu_qaq` 记录
+5. 数据库、邀请码、注册密码和登录状态均按 `uuid` 或 `internalName` 分离，不能串号
+6. 未知 host 且 `default-route: DENY`：被拒绝并提示使用正确入口
 7. 客户端直接使用 `o_名字`：被拒绝
 8. `o_ + username` 超过 16 且 `overflow-mode=KICK`：被拒绝
-

@@ -39,6 +39,8 @@ same-name-login:
   invalid-name: "{prefix}<red>用户名不合法，只能使用 3-16 位英文、数字和下划线。</red>"
   reserved-prefix: "{prefix}<red>{reserved_prefix} 前缀为系统离线身份保留，不能直接使用。请使用原始名字进入服务器。</red>"
   premium-bound-kick: "{prefix}<red>该账号已绑定正版，请使用正版客户端登录。</red>"
+  premium-route-denied: "{prefix}<red>该入口仅允许正版账号登录，请使用正版账号或联系管理员。</red>"
+  unknown-host-denied: "{prefix}<red>当前入口未配置登录路由，请使用正确的正版或离线入口。</red>"
   offline-name-too-long: "{prefix}<red>你的名字加上离线前缀后过长，请更换更短的名字。</red>"
   offline-pending-created: "{prefix}<yellow>你是离线用户，账号名已映射为 {offline_name}，请重新加入服务器。</yellow>"
   pending-expired: "{prefix}<red>离线映射已过期，请重新加入服务器。</red>"

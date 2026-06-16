@@ -12,6 +12,7 @@ import ym.authcode.velocity.service.MojangProfileService
 import ym.authcode.velocity.storage.AuthProfile
 import ym.authcode.velocity.storage.VelocityAuthStorage
 import java.util.Locale
+import java.util.concurrent.CompletableFuture
 
 class AuthCodeVelocityCommand(
     private val settingsProvider: () -> VelocitySettings,
@@ -118,16 +119,16 @@ class AuthCodeVelocityCommand(
             send(source, "velocity.admin.usage-profile")
             return
         }
-        storage.findProfileByName(args[0]).whenComplete { profile, throwable ->
+        findProfilesByName(args[0]).whenComplete { profiles, throwable ->
             if (throwable != null) {
                 send(source, "velocity.admin.database-error")
                 return@whenComplete
             }
-            if (profile == null) {
+            if (profiles.isNullOrEmpty()) {
                 send(source, "velocity.admin.profile-not-found", mapOf("name" to args[0]))
                 return@whenComplete
             }
-            sendProfile(source, profile)
+            profiles.forEach { sendProfile(source, it) }
         }
     }
 
@@ -145,7 +146,7 @@ class AuthCodeVelocityCommand(
         val offlineName = resolved.internalName ?: ""
         val displayName = resolved.displayName ?: ""
         val tooLong = resolved.failure == OfflineNameFailure.NAME_TOO_LONG
-        storage.findProfileByName(name).whenComplete { profile, throwable ->
+        findProfilesByName(name).whenComplete { profiles, throwable ->
             if (throwable != null) {
                 send(source, "velocity.admin.database-error")
                 return@whenComplete
@@ -154,8 +155,8 @@ class AuthCodeVelocityCommand(
                 "name" to name,
                 "valid" to bool(valid),
                 "reserved" to bool(reserved),
-                "has_profile" to bool(profile != null),
-                "premium_bound" to bool(profile?.premiumBound == true),
+                "has_profile" to bool(!profiles.isNullOrEmpty()),
+                "premium_bound" to bool(profiles?.any { it.premiumBound } == true),
                 "offline_name" to offlineName,
                 "overflow" to bool(tooLong),
                 "display_name" to displayName
@@ -249,6 +250,19 @@ class AuthCodeVelocityCommand(
                 "premium_bound" to bool(profile.premiumBound)
             )
         )
+    }
+
+    private fun findProfilesByName(name: String): CompletableFuture<List<AuthProfile>> {
+        val lowerName = name.lowercase(Locale.ROOT)
+        return storage.findProfilesByOriginalLower(lowerName).thenCompose { profiles ->
+            if (profiles.isNotEmpty()) {
+                CompletableFuture.completedFuture(profiles)
+            } else {
+                storage.findProfileByInternalName(name).thenApply { profile ->
+                    if (profile == null) emptyList() else listOf(profile)
+                }
+            }
+        }
     }
 
     private fun validClientName(source: CommandSource, name: String): Boolean {

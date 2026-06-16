@@ -29,10 +29,13 @@ import ym.authcode.common.model.ProxyAuthPayload
 import ym.authcode.common.protocol.AuthCodeChannel
 import ym.authcode.common.protocol.AuthCodePayloadCodec
 import ym.authcode.velocity.command.AuthCodeVelocityCommand
+import ym.authcode.velocity.config.SameNameDefaultRoute
+import ym.authcode.velocity.config.SameNameRouteMode
 import ym.authcode.velocity.config.UnknownNamePolicy
 import ym.authcode.velocity.config.VelocityConfigLoader
 import ym.authcode.velocity.config.VelocitySettings
 import ym.authcode.velocity.lang.VelocityLangManager
+import ym.authcode.velocity.service.MojangNameStatus
 import ym.authcode.velocity.service.MojangProfileService
 import ym.authcode.velocity.storage.AuthProfile
 import ym.authcode.velocity.storage.AuthProfileType
@@ -251,20 +254,160 @@ class AuthCodeVelocityPlugin @Inject constructor(
         if (!sameName.enabled) {
             return routeUnknownOfflineDirect(event)
         }
-        val usernameLower = username.lowercase(Locale.ROOT)
-        return storage.findProfileByOriginalLower(usernameLower).thenCompose { profile ->
+        return when (sameName.routeMode) {
+            SameNameRouteMode.DATABASE_FIRST -> routeDatabaseFirst(event)
+            SameNameRouteMode.VIRTUAL_HOST -> {
+                when (resolveVirtualHostIntent(event)) {
+                    LoginRouteIntent.PREMIUM -> routePremiumIntent(event)
+                    LoginRouteIntent.OFFLINE -> routeOfflineIntent(event)
+                    LoginRouteIntent.DENY -> {
+                        event.result = PreLoginEvent.PreLoginComponentResult.denied(
+                            lang.render("same-name-login.unknown-host-denied")
+                        )
+                        completed()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun routeDatabaseFirst(event: PreLoginEvent): CompletableFuture<Void> {
+        val usernameLower = event.username.lowercase(Locale.ROOT)
+        return storage.findProfilesByOriginalLower(usernameLower).thenCompose { profiles ->
+            val premium = profiles.firstOrNull { it.authType == AuthProfileType.PREMIUM && it.premiumBound }
+            val offline = profiles.firstOrNull { it.authType == AuthProfileType.OFFLINE }
             when {
-                profile != null && profile.authType == AuthProfileType.PREMIUM && profile.premiumBound -> {
-                    routePremiumBound(event, profile)
+                premium != null -> {
+                    routePremiumBound(event, premium)
                     completed()
                 }
-                profile != null && profile.authType == AuthProfileType.OFFLINE -> {
-                    routeOfflineExisting(event, profile)
+                offline != null -> {
+                    routeOfflineExisting(event, offline)
                     completed()
                 }
                 else -> routePendingOrUnknown(event)
             }
         }
+    }
+
+    private fun routePremiumIntent(event: PreLoginEvent): CompletableFuture<Void> {
+        val usernameLower = event.username.lowercase(Locale.ROOT)
+        return storage.findPremiumProfileByOriginalLower(usernameLower).thenCompose { profile ->
+            if (profile != null && profile.premiumBound) {
+                routePremiumBound(event, profile)
+                completed()
+            } else if (!settings.sameNameLogin.allowDualProfileSameOriginalName) {
+                storage.findOfflineProfileByOriginalLower(usernameLower).thenCompose { offlineProfile ->
+                    if (offlineProfile != null) {
+                        event.result = PreLoginEvent.PreLoginComponentResult.denied(
+                            lang.render("same-name-login.premium-route-denied")
+                        )
+                        completed()
+                    } else {
+                        routeUnknownPremium(event)
+                    }
+                }
+            } else {
+                routeUnknownPremium(event)
+            }
+        }
+    }
+
+    private fun routeOfflineIntent(event: PreLoginEvent): CompletableFuture<Void> {
+        val usernameLower = event.username.lowercase(Locale.ROOT)
+        return storage.findOfflineProfileByOriginalLower(usernameLower).thenCompose { profile ->
+            if (profile != null) {
+                routeOfflineExisting(event, profile)
+                completed()
+            } else if (!settings.sameNameLogin.allowDualProfileSameOriginalName) {
+                storage.findPremiumProfileByOriginalLower(usernameLower).thenCompose { premiumProfile ->
+                    if (premiumProfile != null) {
+                        event.result = PreLoginEvent.PreLoginComponentResult.denied(
+                            lang.render("same-name-login.premium-bound-kick")
+                        )
+                        completed()
+                    } else {
+                        routePendingOrUnknown(event)
+                    }
+                }
+            } else {
+                routePendingOrUnknown(event)
+            }
+        }
+    }
+
+    private fun routeUnknownPremium(event: PreLoginEvent): CompletableFuture<Void> {
+        if (!settings.premium.enabled) {
+            event.result = PreLoginEvent.PreLoginComponentResult.denied(
+                lang.render("same-name-login.premium-route-denied")
+            )
+            return completed()
+        }
+        return premiumService.fetchProfile(event.username).thenCompose { lookup ->
+            when {
+                lookup.status == MojangNameStatus.PREMIUM && lookup.uuid != null -> {
+                    storage.bindPremiumProfile(
+                        lookup.name ?: event.username,
+                        lookup.uuid,
+                        System.currentTimeMillis()
+                    ).thenApply<Void> { profile ->
+                        routePremiumBound(event, profile)
+                        null
+                    }
+                }
+                lookup.status == MojangNameStatus.FAILED -> {
+                    event.result = PreLoginEvent.PreLoginComponentResult.denied(
+                        lang.render("velocity.mojang-failed-deny")
+                    )
+                    completed()
+                }
+                else -> {
+                    event.result = PreLoginEvent.PreLoginComponentResult.denied(
+                        lang.render("same-name-login.premium-route-denied")
+                    )
+                    completed()
+                }
+            }
+        }
+    }
+
+    private fun resolveVirtualHostIntent(event: PreLoginEvent): LoginRouteIntent {
+        val virtualHost = event.connection.virtualHost.orElse(null)
+        val hostCandidates = if (virtualHost == null) {
+            emptySet()
+        } else {
+            setOfNotNull(
+                normalizeRouteHost(virtualHost.hostString),
+                normalizeRouteHost("${virtualHost.hostString}:${virtualHost.port}")
+            )
+        }
+        val sameName = settings.sameNameLogin
+        if (hostCandidates.any { it in sameName.premiumHosts }) {
+            return LoginRouteIntent.PREMIUM
+        }
+        if (hostCandidates.any { it in sameName.offlineHosts }) {
+            return LoginRouteIntent.OFFLINE
+        }
+        return when (sameName.defaultRoute) {
+            SameNameDefaultRoute.PREMIUM -> LoginRouteIntent.PREMIUM
+            SameNameDefaultRoute.OFFLINE -> LoginRouteIntent.OFFLINE
+            SameNameDefaultRoute.DENY -> LoginRouteIntent.DENY
+        }
+    }
+
+    private fun normalizeRouteHost(host: String?): String? {
+        val value = host?.trim()
+        if (value.isNullOrBlank()) {
+            return null
+        }
+        return value
+            .removePrefix("http://")
+            .removePrefix("https://")
+            .substringBefore("/")
+            .trim()
+            .trimEnd('.')
+            .lowercase(Locale.ROOT)
+            .ifBlank { null }
     }
 
     private fun routePremiumBound(event: PreLoginEvent, profile: AuthProfile) {
@@ -546,6 +689,12 @@ private enum class RouteType {
     PREMIUM_BOUND,
     OFFLINE_EXISTING,
     OFFLINE_PENDING_CONFIRMED
+}
+
+private enum class LoginRouteIntent {
+    PREMIUM,
+    OFFLINE,
+    DENY
 }
 
 private data class ProxySession(

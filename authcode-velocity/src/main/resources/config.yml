@@ -17,7 +17,25 @@ same-name-login:
 
   # 登录路由模式
   # DATABASE_FIRST = 数据库绑定优先
-  route-mode: "DATABASE_FIRST"
+  # VIRTUAL_HOST = 按玩家连接的域名区分正版/离线入口
+  route-mode: "VIRTUAL_HOST"
+
+  # VIRTUAL_HOST 下未知入口的默认处理
+  # PREMIUM = 按正版入口处理
+  # OFFLINE = 按离线入口处理
+  # DENY = 拒绝未配置入口
+  default-route: "DENY"
+
+  # 正版入口域名，玩家从这些 host 进入时只查询/创建 PREMIUM 档案
+  premium-hosts:
+    - "mc.dreamstar.site"
+
+  # 离线入口域名，玩家从这些 host 进入时只查询/创建 OFFLINE 档案
+  offline-hosts:
+    - "offline.dreamstar.site"
+
+  # 是否允许同一个 original_name_lower 同时存在 PREMIUM 和 OFFLINE 两份档案
+  allow-dual-profile-same-original-name: true
 
   # 未知名字默认如何处理
   # OFFLINE_PENDING = 创建 pending，踢出提示重进
