@@ -90,12 +90,6 @@
                         </goals>
                         <configuration>
                             <createDependencyReducedPom>false</createDependencyReducedPom>
-                            <relocations>
-                                <relocation>
-                                    <pattern>org.sqlite</pattern>
-                                    <shadedPattern>ym.authcode.velocity.libs.sqlite</shadedPattern>
-                                </relocation>
-                            </relocations>
                             <artifactSet>
                                 <excludes>
                                     <exclude>com.velocitypowered:velocity-api</exclude>
