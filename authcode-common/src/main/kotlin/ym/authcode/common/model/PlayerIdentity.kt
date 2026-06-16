@@ -8,7 +8,9 @@ data class PlayerIdentity(
     val internalName: String,
     val displayName: String,
     val uuid: UUID,
-    val premium: Boolean
+    val premium: Boolean,
+    val verifiedAt: Long = 0L,
+    val authSource: String = "UNKNOWN"
 ) {
     val lowerInternalName: String
         get() = internalName.lowercase(Locale.ROOT)

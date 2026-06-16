@@ -39,7 +39,7 @@ class SQLiteStorage(
             })
             dataSource = hikari
             hikari.connection.use { connection ->
-                SQLiteSchema.statements.forEach { sql ->
+                SQLiteSchema.tableStatements.forEach { sql ->
                     connection.prepareStatement(sql).use { it.executeUpdate() }
                 }
                 SQLiteSchema.migrations.forEach { migration ->
@@ -48,6 +48,9 @@ class SQLiteStorage(
                             "ALTER TABLE ${migration.table} ADD COLUMN ${migration.column} ${migration.definition}"
                         ).use { it.executeUpdate() }
                     }
+                }
+                SQLiteSchema.indexStatements.forEach { sql ->
+                    connection.prepareStatement(sql).use { it.executeUpdate() }
                 }
             }
             players = SQLitePlayers(hikari)

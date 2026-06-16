@@ -7,6 +7,12 @@ authors:
   - DreamStar
 description: Invite code auth plugin for Paper and Folia.
 
+dependencies:
+  server:
+    PlaceholderAPI:
+      load: AFTER
+      required: false
+
 commands:
   code:
     description: 输入邀请码

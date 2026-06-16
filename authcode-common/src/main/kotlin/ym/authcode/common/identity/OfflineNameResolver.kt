@@ -45,7 +45,8 @@ object OfflineNameResolver {
             internalName = originalName,
             displayName = originalName,
             uuid = uuid,
-            premium = true
+            premium = true,
+            authSource = "MOJANG"
         )
     }
 
@@ -154,7 +155,8 @@ data class OfflineNameResult(
             internalName = internalName ?: error("Missing internal name"),
             displayName = displayName ?: error("Missing display name"),
             uuid = uuid ?: error("Missing uuid"),
-            premium = false
+            premium = false,
+            authSource = "OFFLINE_NAME"
         )
     }
 

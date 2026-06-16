@@ -17,7 +17,7 @@ class IdentityDisplayListener(
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
     fun onChat(event: AsyncChatEvent) {
         val settings = configManager.current().identityDisplay
-        if (!settings.enabled || !settings.applyChat) {
+        if (!settings.enabled || !settings.applyChat || settings.placeholderOnly) {
             return
         }
         val identity = identityService.find(event.player.uniqueId) ?: return

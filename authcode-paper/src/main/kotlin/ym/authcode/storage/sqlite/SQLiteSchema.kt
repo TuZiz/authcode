@@ -1,7 +1,7 @@
 package ym.authcode.storage.sqlite
 
 object SQLiteSchema {
-    val statements = listOf(
+    val tableStatements = listOf(
         """
         CREATE TABLE IF NOT EXISTS players (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -70,6 +70,9 @@ object SQLiteSchema {
             created_at INTEGER NOT NULL
         )
         """.trimIndent(),
+    )
+
+    val indexStatements = listOf(
         "CREATE INDEX IF NOT EXISTS idx_players_lower_name ON players(lower_name)",
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_players_lower_internal_name ON players(lower_internal_name)",
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_players_uuid ON players(uuid) WHERE uuid IS NOT NULL",
@@ -78,6 +81,8 @@ object SQLiteSchema {
         "CREATE INDEX IF NOT EXISTS idx_proxy_auth_logs_uuid ON proxy_auth_logs(uuid)",
         "CREATE INDEX IF NOT EXISTS idx_proxy_auth_logs_nonce ON proxy_auth_logs(nonce)"
     )
+
+    val statements = tableStatements + indexStatements
 
     val migrations = listOf(
         ColumnMigration("players", "auth_source", "TEXT"),

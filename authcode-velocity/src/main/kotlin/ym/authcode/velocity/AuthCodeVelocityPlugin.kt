@@ -132,6 +132,7 @@ class AuthCodeVelocityPlugin @Inject constructor(
         val player = event.player
         val pending = pendingByName.remove(player.username.lowercase(Locale.ROOT))
         val premium = pending?.expectedPremium == true && player.isOnlineMode
+        val verifiedAt = System.currentTimeMillis()
         val identity = if (premium) {
             OfflineNameResolver.premium(player.username, player.uniqueId)
         } else {
@@ -147,9 +148,13 @@ class AuthCodeVelocityPlugin @Inject constructor(
             pendingByName.remove(identity.originalName.lowercase(Locale.ROOT))
         }
         sessions[player.uniqueId] = ProxySession(
-            identity = identity.copy(premium = premium),
+            identity = identity.copy(
+                premium = premium,
+                verifiedAt = verifiedAt,
+                authSource = "VELOCITY"
+            ),
             remoteIp = player.remoteAddress.address.hostAddress ?: "unknown",
-            loginTime = System.currentTimeMillis()
+            loginTime = verifiedAt
         )
         logger.info(
             "AuthCode login identity: originalName={}, internalName={}, displayName={}, uuid={}, premium={}",

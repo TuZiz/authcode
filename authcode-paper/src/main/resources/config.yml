@@ -58,14 +58,42 @@ offline-name:
   avoid-premium-internal-name: true
   uuid-source: "PREFIXED_INTERNAL_NAME"
 
-identity-display:
-  enabled: true
-  premium-format: "{identity_prefix} {display_name}"
-  offline-format: "{identity_prefix} {display_name}"
-  apply-chat: true
-  apply-tab: true
-  apply-display-name: true
-  apply-placeholder: true
+display:
+  identity-tag:
+    # 是否启用正版/离线身份标签
+    enabled: true
+
+    # 是否修改聊天显示
+    apply-chat: true
+
+    # 是否修改 TAB 列表显示
+    apply-tab-list: true
+
+    # 是否修改 player displayName
+    apply-player-display-name: true
+
+    # 是否修改加入/退出提示
+    apply-join-quit-message: false
+
+    # 是否隐藏离线内部名前缀
+    # o_Steve -> Steve
+    strip-internal-prefix: true
+
+    # 如果服务器使用其他聊天插件，可以开启 placeholder-only
+    # true 时 AuthCode 不接管聊天格式，只提供 Placeholder/API
+    placeholder-only: false
+
+    premium:
+      enabled: true
+      prefix: "<green>[正版]</green> "
+      name-color: "<white>"
+      format: "{prefix}{name}"
+
+    offline:
+      enabled: true
+      prefix: "<gray>[离线]</gray> "
+      name-color: "<white>"
+      format: "{prefix}{name}"
 
 offline-auth:
   require-code: true

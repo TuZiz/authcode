@@ -170,29 +170,95 @@ object OfflineNameConfig {
 
 data class IdentityDisplaySettings(
     val enabled: Boolean,
-    val premiumFormat: String,
-    val offlineFormat: String,
     val applyChat: Boolean,
-    val applyTab: Boolean,
-    val applyDisplayName: Boolean,
-    val applyPlaceholder: Boolean
+    val applyTabList: Boolean,
+    val applyPlayerDisplayName: Boolean,
+    val applyJoinQuitMessage: Boolean,
+    val stripInternalPrefix: Boolean,
+    val placeholderOnly: Boolean,
+    val applyPlaceholder: Boolean,
+    val premium: IdentityTagStyle,
+    val offline: IdentityTagStyle
 ) {
+    val applyTab: Boolean
+        get() = applyTabList
+
+    val applyDisplayName: Boolean
+        get() = applyPlayerDisplayName
+
+    val premiumFormat: String
+        get() = premium.format
+
+    val offlineFormat: String
+        get() = offline.format
+
     companion object {
         fun from(config: FileConfiguration): IdentityDisplaySettings {
             return IdentityDisplaySettings(
-                enabled = config.getBoolean("identity-display.enabled", true),
-                premiumFormat = config.getString(
+                enabled = config.getBoolean(
+                    "display.identity-tag.enabled",
+                    config.getBoolean("identity-display.enabled", true)
+                ),
+                applyChat = config.getBoolean(
+                    "display.identity-tag.apply-chat",
+                    config.getBoolean("identity-display.apply-chat", true)
+                ),
+                applyTabList = config.getBoolean(
+                    "display.identity-tag.apply-tab-list",
+                    config.getBoolean("identity-display.apply-tab", true)
+                ),
+                applyPlayerDisplayName = config.getBoolean(
+                    "display.identity-tag.apply-player-display-name",
+                    config.getBoolean("identity-display.apply-display-name", true)
+                ),
+                applyJoinQuitMessage = config.getBoolean("display.identity-tag.apply-join-quit-message", false),
+                stripInternalPrefix = config.getBoolean(
+                    "display.identity-tag.strip-internal-prefix",
+                    config.getBoolean("offline-name.strip-display-prefix", true)
+                ),
+                placeholderOnly = config.getBoolean("display.identity-tag.placeholder-only", false),
+                applyPlaceholder = config.getBoolean(
+                    "display.identity-tag.apply-placeholder",
+                    config.getBoolean("identity-display.apply-placeholder", true)
+                ),
+                premium = IdentityTagStyle.from(
+                    config,
+                    "display.identity-tag.premium",
                     "identity-display.premium-format",
                     "{identity_prefix} {display_name}"
-                ) ?: "{identity_prefix} {display_name}",
-                offlineFormat = config.getString(
+                ),
+                offline = IdentityTagStyle.from(
+                    config,
+                    "display.identity-tag.offline",
                     "identity-display.offline-format",
                     "{identity_prefix} {display_name}"
-                ) ?: "{identity_prefix} {display_name}",
-                applyChat = config.getBoolean("identity-display.apply-chat", true),
-                applyTab = config.getBoolean("identity-display.apply-tab", true),
-                applyDisplayName = config.getBoolean("identity-display.apply-display-name", true),
-                applyPlaceholder = config.getBoolean("identity-display.apply-placeholder", true)
+                )
+            )
+        }
+    }
+}
+
+data class IdentityTagStyle(
+    val enabled: Boolean,
+    val prefix: String?,
+    val nameColor: String,
+    val format: String
+) {
+    companion object {
+        fun from(
+            config: FileConfiguration,
+            path: String,
+            legacyFormatPath: String,
+            legacyDefaultFormat: String
+        ): IdentityTagStyle {
+            return IdentityTagStyle(
+                enabled = config.getBoolean("$path.enabled", true),
+                prefix = if (config.contains("$path.prefix")) config.getString("$path.prefix") else null,
+                nameColor = config.getString("$path.name-color", "<white>") ?: "<white>",
+                format = config.getString(
+                    "$path.format",
+                    config.getString(legacyFormatPath, legacyDefaultFormat)
+                ) ?: legacyDefaultFormat
             )
         }
     }

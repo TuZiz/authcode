@@ -371,7 +371,9 @@ class AuthService(
             internalName = payload.internalName,
             displayName = payload.displayName,
             uuid = snapshot.uuid,
-            premium = payload.premium
+            premium = payload.premium,
+            verifiedAt = now,
+            authSource = "VELOCITY"
         )
         identityService.remember(identity)
         identityDisplayService.apply(player, identity)
@@ -492,7 +494,9 @@ class AuthService(
             internalName = snapshot.name,
             displayName = snapshot.name,
             uuid = snapshot.uuid,
-            premium = true
+            premium = true,
+            verifiedAt = System.currentTimeMillis(),
+            authSource = "LEGACY_MOJANG_NAME_LOOKUP"
         )
         identityService.remember(identity)
         identityDisplayService.apply(player, identity)

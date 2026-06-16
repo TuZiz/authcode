@@ -31,7 +31,9 @@ class PlayerIdentityService {
             internalName = snapshot.name,
             displayName = snapshot.name,
             uuid = snapshot.uuid,
-            premium = premium
+            premium = premium,
+            verifiedAt = System.currentTimeMillis(),
+            authSource = "LOCAL"
         )
     }
 

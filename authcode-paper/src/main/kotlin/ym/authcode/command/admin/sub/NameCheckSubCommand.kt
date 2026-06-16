@@ -39,6 +39,12 @@ class NameCheckSubCommand(
 
         val premiumFuture = premiumCheckService.checkName(input)
             .exceptionally { PremiumStatus.FAILED }
+        val displayPremiumFuture = if (resolved.success) {
+            premiumCheckService.checkName(resolved.displayName!!)
+                .exceptionally { PremiumStatus.FAILED }
+        } else {
+            CompletableFuture.completedFuture(PremiumStatus.FAILED)
+        }
         val conflictFuture = if (resolved.success) {
             storage.findPlayerByLowerName(resolved.internalName!!.lowercase(Locale.ROOT))
                 .thenApply { it != null }
@@ -47,7 +53,10 @@ class NameCheckSubCommand(
             CompletableFuture.completedFuture(false)
         }
 
-        premiumFuture.thenCombine(conflictFuture) { premiumStatus, conflict ->
+        premiumFuture.thenCombine(displayPremiumFuture) { premiumStatus, displayPremiumStatus ->
+            premiumStatus to displayPremiumStatus
+        }.thenCombine(conflictFuture) { statuses, conflict ->
+            val (premiumStatus, displayPremiumStatus) = statuses
             val overflow = resolved.failure == OfflineNameFailure.NAME_TOO_LONG ||
                 wouldOverflow(input, settings.prefix, settings.enabled, settings.avoidDoublePrefix, settings.maxNameLength)
             val offlineIdentityName = if (resolved.success) {
@@ -57,19 +66,27 @@ class NameCheckSubCommand(
                         internalName = resolved.internalName!!,
                         displayName = resolved.displayName!!,
                         uuid = resolved.uuid!!,
-                        premium = false
+                        premium = false,
+                        authSource = "NAMECHECK"
                     )
                 )
             } else {
                 ""
             }
+            val prefixed = settings.enabled && settings.prefix.isNotEmpty() && input.startsWith(settings.prefix)
+            val premiumCollision = premiumStatus == PremiumStatus.PREMIUM || displayPremiumStatus == PremiumStatus.PREMIUM
             mapOf(
                 "input" to input,
+                "has_offline_prefix" to yesNo(prefixed, "boolean"),
+                "display_name" to (resolved.displayName ?: ""),
+                "final_chat_name" to offlineIdentityName,
                 "mojang" to premiumStatusText(premiumStatus),
+                "display_mojang" to premiumStatusText(displayPremiumStatus),
                 "premium_internal_name" to input,
                 "offline_internal_name" to (resolved.internalName ?: ""),
                 "offline_identity_name" to offlineIdentityName,
                 "overflow" to yesNo(overflow, "overflow"),
+                "premium_collision" to yesNo(premiumCollision, "boolean"),
                 "conflict" to yesNo(conflict || resolved.failure == OfflineNameFailure.INTERNAL_NAME_CONFLICT, "conflict")
             )
         }.whenComplete { variables, throwable ->

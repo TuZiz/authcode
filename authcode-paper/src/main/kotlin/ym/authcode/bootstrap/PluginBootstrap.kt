@@ -24,6 +24,7 @@ import ym.authcode.command.player.LoginCommand
 import ym.authcode.command.player.RegisterCommand
 import ym.authcode.config.ConfigManager
 import ym.authcode.gui.InviteGuiService
+import ym.authcode.hook.PlaceholderHookRegistrar
 import ym.authcode.lang.LangManager
 import ym.authcode.listener.AuthLockListener
 import ym.authcode.listener.IdentityDisplayListener
@@ -148,6 +149,7 @@ class PluginBootstrap(
         )
         registerProxyChannel(authService)
         registerCommands(authService, inviteCodeService, inviteGuiService, premiumCheckService, identityDisplayService)
+        registerPlaceholderHook(identityDisplayService)
     }
 
     private fun registerListeners(vararg listeners: Listener) {
@@ -165,6 +167,10 @@ class PluginBootstrap(
             ProxyAuthMessageListener(authService)
         )
         plugin.logger.info("Registered AuthCode proxy channel: ${proxy.channel}")
+    }
+
+    private fun registerPlaceholderHook(identityDisplayService: IdentityDisplayService) {
+        PlaceholderHookRegistrar.tryRegister(plugin, configManager, identityService, identityDisplayService)
     }
 
     private fun registerCommands(
@@ -188,7 +194,15 @@ class PluginBootstrap(
                 InfoCodeSubCommand(inviteCodeService, messageService),
                 DeleteCodeSubCommand(inviteCodeService, messageService),
                 GuiSubCommand(inviteGuiService, messageService),
-                ReloadSubCommand(configManager, langManager, messageService, scheduler),
+                ReloadSubCommand(
+                    plugin,
+                    configManager,
+                    langManager,
+                    messageService,
+                    scheduler,
+                    identityService,
+                    identityDisplayService
+                ),
                 PremiumSubCommand(storage, messageService),
                 IdentitySubCommand(identityService, identityDisplayService, storage, messageService),
                 NameCheckSubCommand(

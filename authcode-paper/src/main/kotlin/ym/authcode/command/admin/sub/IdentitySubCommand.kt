@@ -46,7 +46,9 @@ class IdentitySubCommand(
                     internalName = data.internalName,
                     displayName = data.displayName,
                     uuid = uuid,
-                    premium = data.lastProxyPremium ?: data.premium ?: false
+                    premium = data.lastProxyPremium ?: data.premium ?: false,
+                    verifiedAt = data.lastProxyVerifyTime,
+                    authSource = data.authSource ?: "DATABASE"
                 )
             )
         }
@@ -60,6 +62,7 @@ class IdentitySubCommand(
         messageService.send(sender, "identity.debug-display-name", variables)
         messageService.send(sender, "identity.debug-premium", variables)
         messageService.send(sender, "identity.debug-uuid", variables)
+        messageService.send(sender, "identity.debug-auth-source", variables)
         messageService.send(sender, "identity.debug-chat-name", variables)
     }
 }
