@@ -22,6 +22,7 @@ object AuthCodePayloadCodec {
             append("\"internalName\":").append(jsonString(payload.internalName)).append(',')
             append("\"displayName\":").append(jsonString(payload.displayName)).append(',')
             append("\"premium\":").append(payload.premium).append(',')
+            append("\"authType\":").append(jsonString(payload.authType)).append(',')
             append("\"timestamp\":").append(payload.timestamp).append(',')
             append("\"nonce\":").append(jsonString(payload.nonce)).append(',')
             append("\"signature\":").append(jsonString(payload.signature))
@@ -39,6 +40,7 @@ object AuthCodePayloadCodec {
             internalName = values.required("internalName"),
             displayName = values.required("displayName"),
             premium = values.required("premium").toBooleanStrictOrNull() ?: error("Invalid premium"),
+            authType = values.required("authType"),
             timestamp = values.required("timestamp").toLongOrNull() ?: error("Invalid timestamp"),
             nonce = values.required("nonce"),
             signature = values.required("signature")

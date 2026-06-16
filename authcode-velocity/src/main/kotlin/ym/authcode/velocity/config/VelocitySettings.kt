@@ -7,22 +7,95 @@ import java.util.Locale
 
 data class VelocitySettings(
     val requireVelocityOfflineMode: Boolean,
+    val sameNameLogin: SameNameLoginSettings,
     val premium: VelocityPremiumSettings,
     val offline: VelocityOfflineSettings,
     val offlineName: OfflineNameSettings,
     val forward: VelocityForwardSettings,
-    val security: VelocitySecuritySettings
+    val security: VelocitySecuritySettings,
+    val storage: VelocityStorageSettings
 ) {
     companion object {
         fun from(yaml: SimpleYaml): VelocitySettings {
             return VelocitySettings(
                 requireVelocityOfflineMode = yaml.boolean("settings.require-velocity-offline-mode", true),
+                sameNameLogin = SameNameLoginSettings.from(yaml),
                 premium = VelocityPremiumSettings.from(yaml),
                 offline = VelocityOfflineSettings.from(yaml),
                 offlineName = VelocityOfflineNameSettings.from(yaml),
                 forward = VelocityForwardSettings.from(yaml),
-                security = VelocitySecuritySettings.from(yaml)
+                security = VelocitySecuritySettings.from(yaml),
+                storage = VelocityStorageSettings.from(yaml)
             )
+        }
+    }
+}
+
+data class SameNameLoginSettings(
+    val enabled: Boolean,
+    val routeMode: SameNameRouteMode,
+    val unknownNamePolicy: UnknownNamePolicy,
+    val allowOfflineFallbackForPremiumBoundName: Boolean,
+    val blockClientReservedPrefix: Boolean,
+    val reservedPrefix: String,
+    val pending: SameNamePendingSettings
+) {
+    companion object {
+        fun from(yaml: SimpleYaml): SameNameLoginSettings {
+            return SameNameLoginSettings(
+                enabled = yaml.boolean("same-name-login.enabled", true),
+                routeMode = SameNameRouteMode.parse(yaml.string("same-name-login.route-mode", "DATABASE_FIRST")),
+                unknownNamePolicy = UnknownNamePolicy.parse(
+                    yaml.string("same-name-login.unknown-name-policy", "OFFLINE_PENDING")
+                ),
+                allowOfflineFallbackForPremiumBoundName = yaml.boolean(
+                    "same-name-login.allow-offline-fallback-for-premium-bound-name",
+                    false
+                ),
+                blockClientReservedPrefix = yaml.boolean("same-name-login.block-client-reserved-prefix", true),
+                reservedPrefix = yaml.string("same-name-login.reserved-prefix", yaml.string("offline-name.prefix", "o_")),
+                pending = SameNamePendingSettings.from(yaml)
+            )
+        }
+    }
+}
+
+data class SameNamePendingSettings(
+    val ttlSeconds: Long,
+    val matchIp: Boolean,
+    val cleanupIntervalSeconds: Long
+) {
+    companion object {
+        fun from(yaml: SimpleYaml): SameNamePendingSettings {
+            return SameNamePendingSettings(
+                ttlSeconds = yaml.long("same-name-login.pending.ttl-seconds", 120L).coerceAtLeast(10L),
+                matchIp = yaml.boolean("same-name-login.pending.match-ip", true),
+                cleanupIntervalSeconds = yaml.long(
+                    "same-name-login.pending.cleanup-interval-seconds",
+                    60L
+                ).coerceAtLeast(10L)
+            )
+        }
+    }
+}
+
+enum class SameNameRouteMode {
+    DATABASE_FIRST;
+
+    companion object {
+        fun parse(value: String): SameNameRouteMode {
+            return entries.firstOrNull { it.name == value.uppercase(Locale.ROOT) } ?: DATABASE_FIRST
+        }
+    }
+}
+
+enum class UnknownNamePolicy {
+    OFFLINE_PENDING,
+    OFFLINE_DIRECT;
+
+    companion object {
+        fun parse(value: String): UnknownNamePolicy {
+            return entries.firstOrNull { it.name == value.uppercase(Locale.ROOT) } ?: OFFLINE_PENDING
         }
     }
 }
@@ -78,7 +151,7 @@ object VelocityOfflineNameSettings {
             avoidDoublePrefix = yaml.boolean("offline-name.avoid-double-prefix", true),
             stripDisplayPrefix = yaml.boolean("offline-name.strip-display-prefix", true),
             maxNameLength = yaml.long("offline-name.max-name-length", 16L).toInt().coerceIn(1, 16),
-            overflowMode = OfflineNameOverflowMode.parse(yaml.string("offline-name.overflow-mode", "HASH_SUFFIX")),
+            overflowMode = OfflineNameOverflowMode.parse(yaml.string("offline-name.overflow-mode", "KICK")),
             hashLength = yaml.long("offline-name.hash-length", 4L).toInt().coerceIn(1, 8),
             avoidPremiumInternalName = yaml.boolean("offline-name.avoid-premium-internal-name", true),
             uuidSource = OfflineUuidSource.parse(
@@ -113,6 +186,18 @@ data class VelocitySecuritySettings(
         fun from(yaml: SimpleYaml): VelocitySecuritySettings {
             return VelocitySecuritySettings(
                 denyPremiumNameOfflineSpoof = yaml.boolean("security.deny-premium-name-offline-spoof", true)
+            )
+        }
+    }
+}
+
+data class VelocityStorageSettings(
+    val sqliteFile: String
+) {
+    companion object {
+        fun from(yaml: SimpleYaml): VelocityStorageSettings {
+            return VelocityStorageSettings(
+                sqliteFile = yaml.string("storage.sqlite-file", "authcode.db")
             )
         }
     }

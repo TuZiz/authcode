@@ -10,6 +10,7 @@ import java.net.http.HttpResponse
 import java.nio.charset.StandardCharsets
 import java.time.Duration
 import java.util.Locale
+import java.util.UUID
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 
@@ -21,10 +22,14 @@ class MojangProfileService(
     private val cache = ConcurrentHashMap<String, CacheEntry>()
 
     fun checkName(name: String): CompletableFuture<MojangNameStatus> {
+        return fetchProfile(name).thenApply { it.status }
+    }
+
+    fun fetchProfile(name: String): CompletableFuture<MojangProfileLookup> {
         val now = System.currentTimeMillis()
         val key = name.lowercase(Locale.ROOT)
         cache[key]?.takeIf { it.expiresAt > now }?.let {
-            return CompletableFuture.completedFuture(it.status)
+            return CompletableFuture.completedFuture(it.lookup)
         }
         val settings = settingsProvider().premium
         val timeout = settings.mojangApiTimeoutMs.coerceAtLeast(500L)
@@ -34,29 +39,40 @@ class MojangProfileService(
             .timeout(Duration.ofMillis(timeout))
             .GET()
             .build()
-        return client.sendAsync(request, HttpResponse.BodyHandlers.discarding())
+        return client.sendAsync(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8))
             .handle { response, throwable ->
                 if (throwable != null) {
                     logger.warn("Mojang API query failed for {}: {}", name, throwable.message)
-                    return@handle MojangNameStatus.FAILED
+                    return@handle MojangProfileLookup(MojangNameStatus.FAILED, null, null)
                 }
                 when (response.statusCode()) {
-                    200 -> MojangNameStatus.PREMIUM
-                    204, 404 -> MojangNameStatus.NOT_PREMIUM
-                    else -> MojangNameStatus.FAILED
+                    200 -> parseProfile(response.body())
+                    204, 404 -> MojangProfileLookup(MojangNameStatus.NOT_PREMIUM, null, null)
+                    else -> MojangProfileLookup(MojangNameStatus.FAILED, null, null)
                 }
             }
-            .thenApply { status ->
-                if (status != MojangNameStatus.FAILED) {
+            .thenApply { lookup ->
+                if (lookup.status != MojangNameStatus.FAILED) {
                     val ttlMillis = settings.cacheMinutes.coerceAtLeast(1L) * 60_000L
-                    cache[key] = CacheEntry(status, System.currentTimeMillis() + ttlMillis)
+                    cache[key] = CacheEntry(lookup, System.currentTimeMillis() + ttlMillis)
                 }
-                status
+                lookup
             }
     }
 
     fun clear() {
         cache.clear()
+    }
+
+    private fun parseProfile(body: String): MojangProfileLookup {
+        val id = Regex("\"id\"\\s*:\\s*\"([0-9a-fA-F]{32})\"").find(body)?.groupValues?.get(1)
+            ?: return MojangProfileLookup(MojangNameStatus.FAILED, null, null)
+        val name = Regex("\"name\"\\s*:\\s*\"([^\"]+)\"").find(body)?.groupValues?.get(1)
+        val uuid = runCatching {
+            UUID.fromString("${id.substring(0, 8)}-${id.substring(8, 12)}-${id.substring(12, 16)}-" +
+                "${id.substring(16, 20)}-${id.substring(20, 32)}")
+        }.getOrNull() ?: return MojangProfileLookup(MojangNameStatus.FAILED, null, null)
+        return MojangProfileLookup(MojangNameStatus.PREMIUM, uuid, name)
     }
 }
 
@@ -66,7 +82,13 @@ enum class MojangNameStatus {
     FAILED
 }
 
-private data class CacheEntry(
+data class MojangProfileLookup(
     val status: MojangNameStatus,
+    val uuid: UUID?,
+    val name: String?
+)
+
+private data class CacheEntry(
+    val lookup: MojangProfileLookup,
     val expiresAt: Long
 )

@@ -11,13 +11,41 @@ premium:
 offline:
   allow-offline-players: true
 
+same-name-login:
+  # 是否启用同 ID 兼容登录
+  enabled: true
+
+  # 登录路由模式
+  # DATABASE_FIRST = 数据库绑定优先
+  route-mode: "DATABASE_FIRST"
+
+  # 未知名字默认如何处理
+  # OFFLINE_PENDING = 创建 pending，踢出提示重进
+  # OFFLINE_DIRECT = 直接 forceOfflineMode 并改 GameProfile
+  unknown-name-policy: "OFFLINE_PENDING"
+
+  # 已绑定正版的名字，离线客户端是否允许降级为离线
+  # 单入口强烈建议 false
+  allow-offline-fallback-for-premium-bound-name: false
+
+  # 是否禁止玩家客户端直接使用离线内部名前缀
+  block-client-reserved-prefix: true
+
+  # 系统保留前缀
+  reserved-prefix: "o_"
+
+  pending:
+    ttl-seconds: 120
+    match-ip: true
+    cleanup-interval-seconds: 60
+
 offline-name:
   enabled: true
   prefix: "o_"
   avoid-double-prefix: true
   strip-display-prefix: true
   max-name-length: 16
-  overflow-mode: "HASH_SUFFIX"
+  overflow-mode: "KICK"
   hash-length: 4
   avoid-premium-internal-name: true
   uuid-source: "PREFIXED_INTERNAL_NAME"
@@ -30,3 +58,6 @@ forward:
 
 security:
   deny-premium-name-offline-spoof: true
+
+storage:
+  sqlite-file: "authcode.db"

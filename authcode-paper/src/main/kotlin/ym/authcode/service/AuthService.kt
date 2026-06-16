@@ -343,10 +343,16 @@ class AuthService(
             return "proxy.uuid-mismatch-kick"
         }
         if (payload.premium) {
+            if (payload.authType != "PREMIUM") {
+                return "proxy.uuid-mismatch-kick"
+            }
             if (payload.originalName != payload.internalName || payload.displayName != payload.originalName) {
                 return "proxy.uuid-mismatch-kick"
             }
             return null
+        }
+        if (payload.authType != "OFFLINE") {
+            return "proxy.uuid-mismatch-kick"
         }
         val resolved = OfflineNameResolver.resolve(payload.originalName, configManager.current().offlineName)
         if (!resolved.success ||

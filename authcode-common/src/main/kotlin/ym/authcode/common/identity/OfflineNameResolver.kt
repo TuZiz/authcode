@@ -7,7 +7,7 @@ import java.util.Locale
 import java.util.UUID
 
 object OfflineNameResolver {
-    private val validName = Regex("^[A-Za-z0-9_]{1,16}$")
+    private val validName = Regex("^[A-Za-z0-9_]{3,16}$")
 
     fun resolve(originalName: String, settings: OfflineNameSettings): OfflineNameResult {
         val normalized = originalName.trim()
@@ -105,7 +105,7 @@ data class OfflineNameSettings(
     val avoidDoublePrefix: Boolean = true,
     val stripDisplayPrefix: Boolean = true,
     val maxNameLength: Int = 16,
-    val overflowMode: OfflineNameOverflowMode = OfflineNameOverflowMode.HASH_SUFFIX,
+    val overflowMode: OfflineNameOverflowMode = OfflineNameOverflowMode.KICK,
     val hashLength: Int = 4,
     val avoidPremiumInternalName: Boolean = true,
     val uuidSource: OfflineUuidSource = OfflineUuidSource.PREFIXED_INTERNAL_NAME
@@ -118,7 +118,7 @@ enum class OfflineNameOverflowMode {
 
     companion object {
         fun parse(value: String?): OfflineNameOverflowMode {
-            return entries.firstOrNull { it.name == value?.uppercase(Locale.ROOT) } ?: HASH_SUFFIX
+            return entries.firstOrNull { it.name == value?.uppercase(Locale.ROOT) } ?: KICK
         }
     }
 }

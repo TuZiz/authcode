@@ -17,10 +17,11 @@ object HmacSigner {
         internalName: String,
         displayName: String,
         premium: Boolean,
+        authType: String,
         timestamp: Long,
         nonce: String
     ): String {
-        return "$version|$username|$uuid|$originalName|$internalName|$displayName|${premium.toString().lowercase()}|$timestamp|$nonce"
+        return "$version|$username|$uuid|$originalName|$internalName|$displayName|${premium.toString().lowercase()}|$authType|$timestamp|$nonce"
     }
 
     fun canonicalString(payload: ProxyAuthPayload): String {
@@ -32,6 +33,7 @@ object HmacSigner {
             payload.internalName,
             payload.displayName,
             payload.premium,
+            payload.authType,
             payload.timestamp,
             payload.nonce
         )
@@ -46,10 +48,14 @@ object HmacSigner {
         internalName: String,
         displayName: String,
         premium: Boolean,
+        authType: String,
         timestamp: Long,
         nonce: String
     ): String {
-        return sign(secret, canonicalString(version, username, uuid, originalName, internalName, displayName, premium, timestamp, nonce))
+        return sign(
+            secret,
+            canonicalString(version, username, uuid, originalName, internalName, displayName, premium, authType, timestamp, nonce)
+        )
     }
 
     fun sign(secret: String, canonicalPayload: String): String {

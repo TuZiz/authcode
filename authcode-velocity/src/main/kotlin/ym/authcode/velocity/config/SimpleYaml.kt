@@ -25,7 +25,7 @@ class SimpleYaml(
 
     private fun parse(content: String): Map<String, String> {
         val parsed = linkedMapOf<String, String>()
-        var section = ""
+        val pathStack = mutableListOf<Pair<Int, String>>()
         content.lineSequence().forEach { rawLine ->
             if (rawLine.isBlank()) {
                 return@forEach
@@ -35,8 +35,11 @@ class SimpleYaml(
                 return@forEach
             }
             val indent = rawLine.takeWhile { it == ' ' }.length
-            if (indent == 0 && trimmed.endsWith(":")) {
-                section = trimmed.removeSuffix(":").trim()
+            while (pathStack.isNotEmpty() && pathStack.last().first >= indent) {
+                pathStack.removeAt(pathStack.lastIndex)
+            }
+            if (trimmed.endsWith(":")) {
+                pathStack += indent to trimmed.removeSuffix(":").trim()
                 return@forEach
             }
             val separator = trimmed.indexOf(':')
@@ -45,7 +48,8 @@ class SimpleYaml(
             }
             val key = trimmed.substring(0, separator).trim()
             val value = unquote(trimmed.substring(separator + 1).trim())
-            val path = if (indent == 0 || section.isEmpty()) key else "$section.$key"
+            val prefix = pathStack.joinToString(".") { it.second }
+            val path = if (prefix.isEmpty()) key else "$prefix.$key"
             parsed[path] = value
         }
         return parsed

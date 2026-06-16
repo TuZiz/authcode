@@ -160,7 +160,7 @@ object OfflineNameConfig {
             avoidDoublePrefix = config.getBoolean("offline-name.avoid-double-prefix", true),
             stripDisplayPrefix = config.getBoolean("offline-name.strip-display-prefix", true),
             maxNameLength = config.getInt("offline-name.max-name-length", 16).coerceIn(1, 16),
-            overflowMode = OfflineNameOverflowMode.parse(config.getString("offline-name.overflow-mode", "HASH_SUFFIX")),
+            overflowMode = OfflineNameOverflowMode.parse(config.getString("offline-name.overflow-mode", "KICK")),
             hashLength = config.getInt("offline-name.hash-length", 4).coerceIn(1, 8),
             avoidPremiumInternalName = config.getBoolean("offline-name.avoid-premium-internal-name", true),
             uuidSource = OfflineUuidSource.parse(config.getString("offline-name.uuid-source", "PREFIXED_INTERNAL_NAME"))

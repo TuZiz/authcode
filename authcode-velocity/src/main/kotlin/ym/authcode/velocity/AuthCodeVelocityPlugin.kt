@@ -12,9 +12,11 @@ import com.velocitypowered.api.event.proxy.ProxyInitializeEvent
 import com.velocitypowered.api.event.proxy.ProxyShutdownEvent
 import com.velocitypowered.api.plugin.Plugin
 import com.velocitypowered.api.plugin.annotation.DataDirectory
+import com.velocitypowered.api.proxy.InboundConnection
 import com.velocitypowered.api.proxy.Player
 import com.velocitypowered.api.proxy.ProxyServer
 import com.velocitypowered.api.proxy.messages.MinecraftChannelIdentifier
+import com.velocitypowered.api.scheduler.ScheduledTask
 import com.velocitypowered.api.util.GameProfile
 import net.kyori.adventure.text.Component
 import org.slf4j.Logger
@@ -22,17 +24,20 @@ import ym.authcode.common.crypto.HmacSigner
 import ym.authcode.common.crypto.NonceGenerator
 import ym.authcode.common.identity.OfflineNameFailure
 import ym.authcode.common.identity.OfflineNameResolver
-import ym.authcode.common.identity.OfflineNameResult
 import ym.authcode.common.model.PlayerIdentity
 import ym.authcode.common.model.ProxyAuthPayload
 import ym.authcode.common.protocol.AuthCodeChannel
 import ym.authcode.common.protocol.AuthCodePayloadCodec
+import ym.authcode.velocity.command.AuthCodeVelocityCommand
+import ym.authcode.velocity.config.UnknownNamePolicy
 import ym.authcode.velocity.config.VelocityConfigLoader
-import ym.authcode.velocity.config.VelocityFailedAction
 import ym.authcode.velocity.config.VelocitySettings
 import ym.authcode.velocity.lang.VelocityLangManager
-import ym.authcode.velocity.service.MojangNameStatus
 import ym.authcode.velocity.service.MojangProfileService
+import ym.authcode.velocity.storage.AuthProfile
+import ym.authcode.velocity.storage.AuthProfileType
+import ym.authcode.velocity.storage.PendingOfflineRename
+import ym.authcode.velocity.storage.VelocityAuthStorage
 import java.nio.file.Path
 import java.time.Duration
 import java.util.Locale
@@ -56,9 +61,15 @@ class AuthCodeVelocityPlugin @Inject constructor(
     private lateinit var lang: VelocityLangManager
     private lateinit var settings: VelocitySettings
     private lateinit var premiumService: MojangProfileService
+    private lateinit var storage: VelocityAuthStorage
     private lateinit var identifier: MinecraftChannelIdentifier
-    private val pendingByName = ConcurrentHashMap<String, PendingLogin>()
+    private val plansByKey = ConcurrentHashMap<String, LoginRoutePlan>()
+    private val plansByName = ConcurrentHashMap<String, LoginRoutePlan>()
+    private val plansByUuid = ConcurrentHashMap<UUID, LoginRoutePlan>()
     private val sessions = ConcurrentHashMap<UUID, ProxySession>()
+    @Volatile
+    private var storageReady = false
+    private var cleanupTask: ScheduledTask? = null
 
     @Subscribe
     fun onProxyInitialization(event: ProxyInitializeEvent) {
@@ -67,18 +78,30 @@ class AuthCodeVelocityPlugin @Inject constructor(
         lang = VelocityLangManager(configLoader)
         lang.load()
         premiumService = MojangProfileService({ settings }, logger)
+        storage = VelocityAuthStorage(dataDirectory, { settings }, logger)
         identifier = MinecraftChannelIdentifier.from(settings.forward.channel)
         server.channelRegistrar.register(identifier)
         if (settings.requireVelocityOfflineMode && server.configuration.isOnlineMode) {
             logger.warn("AuthCode requires Velocity online-mode=false for hybrid premium/offline authentication.")
         }
-        logger.info("AuthCode Velocity enabled on channel {}.", settings.forward.channel)
+        storage.initialize().whenComplete { _, throwable ->
+            if (throwable != null) {
+                logger.error("AuthCode Velocity database initialization failed: {}", throwable.message)
+                return@whenComplete
+            }
+            server.scheduler.buildTask(this, Runnable {
+                storageReady = true
+                registerCommand()
+                scheduleCleanup()
+                logger.info("AuthCode Velocity enabled on channel {}.", settings.forward.channel)
+            }).schedule()
+        }
     }
 
     @Subscribe(priority = 100)
     fun onPreLogin(event: PreLoginEvent): EventTask {
         return EventTask.withContinuation { continuation ->
-            if (!::settings.isInitialized) {
+            if (!readyForLogin()) {
                 event.result = PreLoginEvent.PreLoginComponentResult.denied(configError())
                 continuation.resume()
                 return@withContinuation
@@ -91,8 +114,8 @@ class AuthCodeVelocityPlugin @Inject constructor(
             resolvePreLogin(event).whenComplete { _, throwable ->
                 try {
                     if (throwable != null) {
-                        logger.warn("AuthCode pre-login decision failed for {}: {}", event.username, throwable.message)
-                        event.result = PreLoginEvent.PreLoginComponentResult.denied(lang.render("velocity.mojang-failed-deny"))
+                        logger.warn("AuthCode route decision failed for {}: {}", event.username, throwable.message)
+                        event.result = PreLoginEvent.PreLoginComponentResult.denied(lang.render("velocity.config-error"))
                     }
                     continuation.resume()
                 } catch (exception: Throwable) {
@@ -104,68 +127,77 @@ class AuthCodeVelocityPlugin @Inject constructor(
 
     @Subscribe(priority = 100)
     fun onGameProfileRequest(event: GameProfileRequestEvent) {
-        if (!::settings.isInitialized || event.isOnlineMode) {
+        if (!readyForLogin() || event.isOnlineMode) {
             return
         }
-        val pending = pendingByName[event.username.lowercase(Locale.ROOT)] ?: return
-        if (pending.expectedPremium) {
+        val plan = findPlan(event.connection, event.username) ?: return
+        if (plan.premium) {
             return
         }
-        val identity = pending.identity ?: return
-        val profile = GameProfile(identity.uuid, identity.internalName, emptyList())
-        val rewrittenIdentity = identity
-        event.gameProfile = profile
-        pendingByName[identity.internalName.lowercase(Locale.ROOT)] = pending.copy(identity = rewrittenIdentity)
-        if (identity.internalName != identity.originalName) {
-            logger.info(
-                "AuthCode offline profile rewritten: originalName={}, internalName={}, displayName={}, uuid={}, premium=false",
-                identity.originalName,
-                identity.internalName,
-                identity.displayName,
-                rewrittenIdentity.uuid
-            )
-        }
+        event.gameProfile = GameProfile(plan.uuid, plan.internalName, emptyList())
+        plansByName[plan.internalName.lowercase(Locale.ROOT)] = plan
+        plansByUuid[plan.uuid] = plan
+        logger.info(
+            "AuthCode offline profile rewritten: originalName={}, internalName={}, displayName={}, uuid={}, route={}",
+            plan.originalName,
+            plan.internalName,
+            plan.displayName,
+            plan.uuid,
+            plan.routeType
+        )
     }
 
     @Subscribe
     fun onPostLogin(event: PostLoginEvent) {
+        if (!readyForLogin()) {
+            event.player.disconnect(configError())
+            return
+        }
         val player = event.player
-        val pending = pendingByName.remove(player.username.lowercase(Locale.ROOT))
-        val premium = pending?.expectedPremium == true && player.isOnlineMode
-        val verifiedAt = System.currentTimeMillis()
-        val identity = if (premium) {
-            OfflineNameResolver.premium(player.username, player.uniqueId)
-        } else {
-            pending?.identity?.copy(uuid = player.uniqueId) ?: PlayerIdentity(
-                originalName = player.username,
-                internalName = player.username,
-                displayName = player.username,
-                uuid = player.uniqueId,
-                premium = false
+        val plan = removePlan(player) ?: fallbackOfflinePlan(player)
+        if (plan.premium && !player.isOnlineMode) {
+            player.disconnect(lang.render("same-name-login.premium-bound-kick"))
+            return
+        }
+        if (!plan.premium && player.uniqueId != plan.uuid) {
+            logger.warn(
+                "AuthCode offline UUID mismatch for {}: expected={}, actual={}",
+                player.username,
+                plan.uuid,
+                player.uniqueId
             )
+            player.disconnect(lang.render("velocity.config-error"))
+            return
         }
-        if (identity.originalName.lowercase(Locale.ROOT) != player.username.lowercase(Locale.ROOT)) {
-            pendingByName.remove(identity.originalName.lowercase(Locale.ROOT))
-        }
+        val verifiedAt = System.currentTimeMillis()
+        val originalName = if (plan.premium) player.username else plan.originalName
+        val internalName = if (plan.premium) player.username else plan.internalName
+        val displayName = if (plan.premium) player.username else plan.displayName
+        val identity = PlayerIdentity(
+            originalName = originalName,
+            internalName = internalName,
+            displayName = displayName,
+            uuid = player.uniqueId,
+            premium = plan.premium,
+            verifiedAt = verifiedAt,
+            authSource = "VELOCITY"
+        )
         sessions[player.uniqueId] = ProxySession(
-            identity = identity.copy(
-                premium = premium,
-                verifiedAt = verifiedAt,
-                authSource = "VELOCITY"
-            ),
-            remoteIp = player.remoteAddress.address.hostAddress ?: "unknown",
+            identity = identity,
+            remoteIp = player.remoteAddress.address?.hostAddress ?: player.remoteAddress.hostString,
             loginTime = verifiedAt
         )
         logger.info(
-            "AuthCode login identity: originalName={}, internalName={}, displayName={}, uuid={}, premium={}",
+            "AuthCode login identity: originalName={}, internalName={}, displayName={}, uuid={}, premium={}, route={}",
             identity.originalName,
-            player.username,
+            identity.internalName,
             identity.displayName,
-            player.uniqueId,
-            premium
+            identity.uuid,
+            identity.premium,
+            plan.routeType
         )
         player.sendMessage(
-            if (premium) {
+            if (identity.premium) {
                 lang.render("velocity.premium-detected")
             } else {
                 lang.render("velocity.offline-detected")
@@ -185,109 +217,181 @@ class AuthCodeVelocityPlugin @Inject constructor(
     @Subscribe
     fun onDisconnect(event: DisconnectEvent) {
         sessions.remove(event.player.uniqueId)
-        pendingByName.remove(event.player.username.lowercase(Locale.ROOT))
+        removePlan(event.player)
     }
 
     @Subscribe
     fun onProxyShutdown(event: ProxyShutdownEvent) {
+        cleanupTask?.cancel()
         sessions.clear()
-        pendingByName.clear()
+        plansByKey.clear()
+        plansByName.clear()
+        plansByUuid.clear()
+        if (::storage.isInitialized) {
+            storage.close()
+        }
         if (::premiumService.isInitialized) {
             premiumService.clear()
         }
     }
 
-    private fun handleLookupFailure(event: PreLoginEvent) {
-        if (settings.premium.failedAction == VelocityFailedAction.REQUIRE_OFFLINE && settings.offline.allowOfflinePlayers) {
-            forceOffline(event, resolveOfflineName(event))
-            return
-        }
-        event.result = PreLoginEvent.PreLoginComponentResult.denied(lang.render("velocity.mojang-failed-deny"))
-    }
-
     private fun resolvePreLogin(event: PreLoginEvent): CompletableFuture<Void> {
-        if (!settings.premium.enabled || settings.premium.checkMode != "MOJANG_NAME_LOOKUP") {
-            return prepareOffline(event)
+        val username = event.username
+        if (!OfflineNameResolver.isValidMinecraftName(username)) {
+            event.result = PreLoginEvent.PreLoginComponentResult.denied(lang.render("same-name-login.invalid-name"))
+            return completed()
         }
-        return premiumService.checkName(event.username).thenCompose { status ->
-            when (status) {
-                MojangNameStatus.PREMIUM -> {
-                    if (settings.security.denyPremiumNameOfflineSpoof) {
-                        forceOnline(event)
-                        completed()
-                    } else {
-                        prepareOffline(event)
-                    }
-                }
-                MojangNameStatus.NOT_PREMIUM -> prepareOffline(event)
-                MojangNameStatus.FAILED -> {
-                    handleLookupFailure(event)
+        val sameName = settings.sameNameLogin
+        if (sameName.blockClientReservedPrefix && username.startsWith(sameName.reservedPrefix, ignoreCase = true)) {
+            event.result = PreLoginEvent.PreLoginComponentResult.denied(
+                lang.render("same-name-login.reserved-prefix", mapOf("reserved_prefix" to sameName.reservedPrefix))
+            )
+            return completed()
+        }
+        if (!sameName.enabled) {
+            return routeUnknownOfflineDirect(event)
+        }
+        val usernameLower = username.lowercase(Locale.ROOT)
+        return storage.findProfileByOriginalLower(usernameLower).thenCompose { profile ->
+            when {
+                profile != null && profile.authType == AuthProfileType.PREMIUM && profile.premiumBound -> {
+                    routePremiumBound(event, profile)
                     completed()
                 }
+                profile != null && profile.authType == AuthProfileType.OFFLINE -> {
+                    routeOfflineExisting(event, profile)
+                    completed()
+                }
+                else -> routePendingOrUnknown(event)
             }
         }
     }
 
-    private fun forceOnline(event: PreLoginEvent) {
-        pendingByName[event.username.lowercase(Locale.ROOT)] = PendingLogin(
-            expectedPremium = true,
-            originalName = event.username
+    private fun routePremiumBound(event: PreLoginEvent, profile: AuthProfile) {
+        val plan = LoginRoutePlan(
+            key = routeKey(event.connection, profile.originalNameLower),
+            originalName = event.username,
+            internalName = event.username,
+            displayName = event.username,
+            uuid = profile.uuid,
+            premium = true,
+            authType = AuthProfileType.PREMIUM,
+            routeType = RouteType.PREMIUM_BOUND,
+            createdAt = System.currentTimeMillis()
         )
+        rememberPlan(plan)
         event.result = PreLoginEvent.PreLoginComponentResult.forceOnlineMode()
     }
 
-    private fun prepareOffline(event: PreLoginEvent): CompletableFuture<Void> {
-        val result = resolveOfflineName(event)
-        if (!result.success) {
-            denyOfflineName(event, result.failure ?: OfflineNameFailure.INVALID_NAME)
-            return completed()
-        }
-        if (!settings.offlineName.avoidPremiumInternalName || !settings.premium.enabled) {
-            forceOffline(event, result)
-            return completed()
-        }
-        val internalName = result.internalName ?: event.username
-        if (internalName.equals(event.username, ignoreCase = true)) {
-            forceOffline(event, result)
-            return completed()
-        }
-        return premiumService.checkName(internalName).handle<Void> { status, throwable ->
-            if (throwable != null || status == MojangNameStatus.FAILED) {
-                event.result = PreLoginEvent.PreLoginComponentResult.denied(lang.render("velocity.mojang-failed-deny"))
-            } else if (status == MojangNameStatus.PREMIUM) {
-                denyOfflineName(event, OfflineNameFailure.INTERNAL_NAME_CONFLICT)
-            } else {
-                forceOffline(event, result)
+    private fun routeOfflineExisting(event: PreLoginEvent, profile: AuthProfile) {
+        val plan = LoginRoutePlan(
+            key = routeKey(event.connection, profile.originalNameLower),
+            originalName = profile.originalName,
+            internalName = profile.internalName,
+            displayName = profile.displayName,
+            uuid = profile.uuid,
+            premium = false,
+            authType = AuthProfileType.OFFLINE,
+            routeType = RouteType.OFFLINE_EXISTING,
+            createdAt = System.currentTimeMillis()
+        )
+        rememberPlan(plan)
+        event.result = PreLoginEvent.PreLoginComponentResult.forceOfflineMode()
+    }
+
+    private fun routePendingOrUnknown(event: PreLoginEvent): CompletableFuture<Void> {
+        val usernameLower = event.username.lowercase(Locale.ROOT)
+        val ip = event.connection.remoteAddress.address?.hostAddress ?: event.connection.remoteAddress.hostString
+        val now = System.currentTimeMillis()
+        return storage.findValidPending(usernameLower, ip, settings.sameNameLogin.pending.matchIp, now)
+            .thenCompose { pending ->
+                if (pending != null) {
+                    routePendingConfirmed(event, pending, now)
+                } else {
+                    when (settings.sameNameLogin.unknownNamePolicy) {
+                        UnknownNamePolicy.OFFLINE_PENDING -> createPendingAndDeny(event, ip, now)
+                        UnknownNamePolicy.OFFLINE_DIRECT -> routeUnknownOfflineDirect(event)
+                    }
+                }
             }
+    }
+
+    private fun routePendingConfirmed(
+        event: PreLoginEvent,
+        pending: PendingOfflineRename,
+        now: Long
+    ): CompletableFuture<Void> {
+        val uuid = offlineUuid(pending.username, pending.offlineName)
+        return storage.confirmPendingAsOfflineProfile(pending, uuid, now).thenApply<Void> {
+            val plan = LoginRoutePlan(
+                key = routeKey(event.connection, it.originalNameLower),
+                originalName = it.originalName,
+                internalName = it.internalName,
+                displayName = it.displayName,
+                uuid = it.uuid,
+                premium = false,
+                authType = AuthProfileType.OFFLINE,
+                routeType = RouteType.OFFLINE_PENDING_CONFIRMED,
+                createdAt = now
+            )
+            rememberPlan(plan)
+            event.result = PreLoginEvent.PreLoginComponentResult.forceOfflineMode()
             null
         }
     }
 
-    private fun resolveOfflineName(event: PreLoginEvent): OfflineNameResult {
-        return OfflineNameResolver.resolve(event.username, settings.offlineName)
-    }
-
-    private fun forceOffline(event: PreLoginEvent, result: OfflineNameResult) {
-        if (!settings.offline.allowOfflinePlayers) {
-            event.result = PreLoginEvent.PreLoginComponentResult.denied(lang.render("velocity.config-error"))
-            return
-        }
+    private fun createPendingAndDeny(event: PreLoginEvent, ip: String, now: Long): CompletableFuture<Void> {
+        val result = OfflineNameResolver.resolve(event.username, settings.offlineName)
         if (!result.success) {
             denyOfflineName(event, result.failure ?: OfflineNameFailure.INVALID_NAME)
-            return
+            return completed()
         }
-        pendingByName[event.username.lowercase(Locale.ROOT)] = PendingLogin(
-            expectedPremium = false,
-            originalName = event.username,
-            identity = result.identity()
-        )
-        event.result = PreLoginEvent.PreLoginComponentResult.forceOfflineMode()
+        val offlineName = result.internalName ?: event.username
+        val expiresAt = now + settings.sameNameLogin.pending.ttlSeconds * 1000L
+        return storage.createPending(event.username, offlineName, ip, expiresAt, now).thenApply<Void> {
+            event.result = PreLoginEvent.PreLoginComponentResult.denied(
+                lang.render("same-name-login.offline-pending-created", mapOf("offline_name" to offlineName))
+            )
+            null
+        }
+    }
+
+    private fun routeUnknownOfflineDirect(event: PreLoginEvent): CompletableFuture<Void> {
+        val result = OfflineNameResolver.resolve(event.username, settings.offlineName)
+        if (!result.success) {
+            denyOfflineName(event, result.failure ?: OfflineNameFailure.INVALID_NAME)
+            return completed()
+        }
+        val identity = result.identity()
+        val now = System.currentTimeMillis()
+        return storage.upsertOfflineProfile(
+            identity.originalName,
+            identity.internalName,
+            identity.displayName,
+            identity.uuid,
+            now
+        ).thenApply<Void> {
+            val plan = LoginRoutePlan(
+                key = routeKey(event.connection, it.originalNameLower),
+                originalName = it.originalName,
+                internalName = it.internalName,
+                displayName = it.displayName,
+                uuid = it.uuid,
+                premium = false,
+                authType = AuthProfileType.OFFLINE,
+                routeType = RouteType.OFFLINE_EXISTING,
+                createdAt = now
+            )
+            rememberPlan(plan)
+            event.result = PreLoginEvent.PreLoginComponentResult.forceOfflineMode()
+            null
+        }
     }
 
     private fun denyOfflineName(event: PreLoginEvent, failure: OfflineNameFailure) {
         val key = when (failure) {
-            OfflineNameFailure.INVALID_NAME -> "velocity.invalid-name"
-            OfflineNameFailure.NAME_TOO_LONG -> "velocity.name-too-long"
+            OfflineNameFailure.INVALID_NAME -> "same-name-login.invalid-name"
+            OfflineNameFailure.NAME_TOO_LONG -> "same-name-login.offline-name-too-long"
             OfflineNameFailure.INTERNAL_NAME_CONFLICT -> "velocity.internal-name-conflict"
         }
         event.result = PreLoginEvent.PreLoginComponentResult.denied(lang.render(key))
@@ -297,6 +401,7 @@ class AuthCodeVelocityPlugin @Inject constructor(
         val session = sessions[player.uniqueId] ?: return
         val identity = session.identity
         val now = System.currentTimeMillis()
+        val authType = if (identity.premium) AuthProfileType.PREMIUM.name else AuthProfileType.OFFLINE.name
         val unsignedPayload = ProxyAuthPayload(
             version = AuthCodeChannel.VERSION,
             username = identity.internalName,
@@ -305,6 +410,7 @@ class AuthCodeVelocityPlugin @Inject constructor(
             internalName = identity.internalName,
             displayName = identity.displayName,
             premium = identity.premium,
+            authType = authType,
             timestamp = now,
             nonce = NonceGenerator.generate(),
             signature = ""
@@ -319,6 +425,102 @@ class AuthCodeVelocityPlugin @Inject constructor(
         }
     }
 
+    private fun rememberPlan(plan: LoginRoutePlan) {
+        plansByKey[plan.key] = plan
+        plansByName[plan.originalName.lowercase(Locale.ROOT)] = plan
+        plansByName[plan.internalName.lowercase(Locale.ROOT)] = plan
+        plansByUuid[plan.uuid] = plan
+    }
+
+    private fun findPlan(connection: InboundConnection, username: String): LoginRoutePlan? {
+        val lowerName = username.lowercase(Locale.ROOT)
+        return plansByKey[routeKey(connection, lowerName)] ?: plansByName[lowerName]
+    }
+
+    private fun removePlan(player: Player): LoginRoutePlan? {
+        val byUuid = plansByUuid.remove(player.uniqueId)
+        val byName = plansByName.remove(player.username.lowercase(Locale.ROOT))
+        val plan = byUuid ?: byName
+        if (plan != null) {
+            plansByKey.remove(plan.key)
+            plansByName.remove(plan.originalName.lowercase(Locale.ROOT))
+            plansByName.remove(plan.internalName.lowercase(Locale.ROOT))
+            plansByUuid.remove(plan.uuid)
+        }
+        return plan
+    }
+
+    private fun fallbackOfflinePlan(player: Player): LoginRoutePlan {
+        val now = System.currentTimeMillis()
+        return LoginRoutePlan(
+            key = "fallback:${player.uniqueId}",
+            originalName = player.username,
+            internalName = player.username,
+            displayName = player.username,
+            uuid = player.uniqueId,
+            premium = false,
+            authType = AuthProfileType.OFFLINE,
+            routeType = RouteType.OFFLINE_EXISTING,
+            createdAt = now
+        )
+    }
+
+    private fun routeKey(connection: InboundConnection, originalNameLower: String): String {
+        return "${connection.remoteAddress}|$originalNameLower"
+    }
+
+    private fun offlineUuid(originalName: String, internalName: String): UUID {
+        return OfflineNameResolver.offlineUuid(settings.offlineName.uuidSource.nameSource(originalName, internalName))
+    }
+
+    private fun scheduleCleanup() {
+        cleanupTask?.cancel()
+        cleanupTask = server.scheduler.buildTask(this, Runnable {
+            val now = System.currentTimeMillis()
+            cleanupPlans(now)
+            storage.cleanupPending(now)
+        }).repeat(Duration.ofSeconds(settings.sameNameLogin.pending.cleanupIntervalSeconds)).schedule()
+    }
+
+    private fun cleanupPlans(now: Long) {
+        val maxAgeMillis = settings.sameNameLogin.pending.ttlSeconds.coerceAtLeast(120L) * 1000L
+        plansByKey.values
+            .filter { now - it.createdAt > maxAgeMillis }
+            .forEach { plan ->
+                plansByKey.remove(plan.key)
+                plansByName.remove(plan.originalName.lowercase(Locale.ROOT))
+                plansByName.remove(plan.internalName.lowercase(Locale.ROOT))
+                plansByUuid.remove(plan.uuid)
+            }
+    }
+
+    private fun registerCommand() {
+        val command = AuthCodeVelocityCommand(
+            settingsProvider = { settings },
+            storage = storage,
+            mojangProfileService = premiumService,
+            lang = lang,
+            identityLookup = { name ->
+                val lower = name.lowercase(Locale.ROOT)
+                sessions.values.firstOrNull {
+                    it.identity.internalName.equals(name, ignoreCase = true) ||
+                        it.identity.originalName.equals(name, ignoreCase = true) ||
+                        it.identity.displayName.equals(name, ignoreCase = true) ||
+                        it.identity.uuid.toString().lowercase(Locale.ROOT) == lower
+                }?.identity
+            }
+        )
+        val meta = server.commandManager.metaBuilder("authcode")
+            .aliases("acode")
+            .plugin(this)
+            .build()
+        server.commandManager.register(meta, command)
+    }
+
+    private fun readyForLogin(): Boolean {
+        return ::settings.isInitialized && ::storage.isInitialized && storageReady
+    }
+
     private fun configError(): Component {
         return if (::lang.isInitialized) lang.render("velocity.config-error") else Component.empty()
     }
@@ -328,11 +530,23 @@ class AuthCodeVelocityPlugin @Inject constructor(
     }
 }
 
-private data class PendingLogin(
-    val expectedPremium: Boolean,
+private data class LoginRoutePlan(
+    val key: String,
     val originalName: String,
-    val identity: PlayerIdentity? = null
+    val internalName: String,
+    val displayName: String,
+    val uuid: UUID,
+    val premium: Boolean,
+    val authType: AuthProfileType,
+    val routeType: RouteType,
+    val createdAt: Long
 )
+
+private enum class RouteType {
+    PREMIUM_BOUND,
+    OFFLINE_EXISTING,
+    OFFLINE_PENDING_CONFIRMED
+}
 
 private data class ProxySession(
     val identity: PlayerIdentity,

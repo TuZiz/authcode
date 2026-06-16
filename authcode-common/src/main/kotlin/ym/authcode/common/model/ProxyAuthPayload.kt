@@ -8,6 +8,7 @@ data class ProxyAuthPayload(
     val internalName: String,
     val displayName: String,
     val premium: Boolean,
+    val authType: String,
     val timestamp: Long,
     val nonce: String,
     val signature: String

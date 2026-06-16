@@ -53,7 +53,7 @@ offline-name:
   avoid-double-prefix: true
   strip-display-prefix: true
   max-name-length: 16
-  overflow-mode: "HASH_SUFFIX"
+  overflow-mode: "KICK"
   hash-length: 4
   avoid-premium-internal-name: true
   uuid-source: "PREFIXED_INTERNAL_NAME"
