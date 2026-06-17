@@ -38,8 +38,8 @@ data class SameNameLoginSettings(
     val premiumHosts: Set<String>,
     val offlineHosts: Set<String>,
     val allowDualProfileSameOriginalName: Boolean,
-    val unknownNamePolicy: UnknownNamePolicy,
-    val allowOfflineFallbackForPremiumBoundName: Boolean,
+    val unknownPremiumPolicy: UnknownPremiumPolicy,
+    val unknownOfflinePolicy: UnknownOfflinePolicy,
     val blockClientReservedPrefix: Boolean,
     val reservedPrefix: String,
     val pending: SameNamePendingSettings
@@ -56,12 +56,14 @@ data class SameNameLoginSettings(
                     "same-name-login.allow-dual-profile-same-original-name",
                     true
                 ),
-                unknownNamePolicy = UnknownNamePolicy.parse(
-                    yaml.string("same-name-login.unknown-name-policy", "OFFLINE_PENDING")
+                unknownPremiumPolicy = UnknownPremiumPolicy.parse(
+                    yaml.string("same-name-login.unknown-premium-policy.mode", "AUTO_MOJANG_BIND")
                 ),
-                allowOfflineFallbackForPremiumBoundName = yaml.boolean(
-                    "same-name-login.allow-offline-fallback-for-premium-bound-name",
-                    false
+                unknownOfflinePolicy = UnknownOfflinePolicy.parse(
+                    yaml.string(
+                        "same-name-login.unknown-offline-policy.mode",
+                        yaml.string("same-name-login.unknown-name-policy", "OFFLINE_PENDING")
+                    )
                 ),
                 blockClientReservedPrefix = yaml.boolean("same-name-login.block-client-reserved-prefix", true),
                 reservedPrefix = yaml.string("same-name-login.reserved-prefix", yaml.string("offline-name.prefix", "o_")),
@@ -128,12 +130,23 @@ enum class SameNameDefaultRoute {
     }
 }
 
-enum class UnknownNamePolicy {
+enum class UnknownPremiumPolicy {
+    AUTO_MOJANG_BIND,
+    ADMIN_BIND_ONLY;
+
+    companion object {
+        fun parse(value: String): UnknownPremiumPolicy {
+            return entries.firstOrNull { it.name == value.uppercase(Locale.ROOT) } ?: AUTO_MOJANG_BIND
+        }
+    }
+}
+
+enum class UnknownOfflinePolicy {
     OFFLINE_PENDING,
     OFFLINE_DIRECT;
 
     companion object {
-        fun parse(value: String): UnknownNamePolicy {
+        fun parse(value: String): UnknownOfflinePolicy {
             return entries.firstOrNull { it.name == value.uppercase(Locale.ROOT) } ?: OFFLINE_PENDING
         }
     }

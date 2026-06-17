@@ -37,14 +37,17 @@ same-name-login:
   # 是否允许同一个 original_name_lower 同时存在 PREMIUM 和 OFFLINE 两份档案
   allow-dual-profile-same-original-name: true
 
-  # 未知名字默认如何处理
-  # OFFLINE_PENDING = 创建 pending，踢出提示重进
-  # OFFLINE_DIRECT = 直接 forceOfflineMode 并改 GameProfile
-  unknown-name-policy: "OFFLINE_PENDING"
+  # 正版入口遇到未知名字时如何处理
+  unknown-premium-policy:
+    # AUTO_MOJANG_BIND = 直接 forceOnlineMode，正版验证成功后写入 PREMIUM 档案
+    # ADMIN_BIND_ONLY = 必须管理员 premium bind 后才允许正版入口
+    mode: "AUTO_MOJANG_BIND"
 
-  # 已绑定正版的名字，离线客户端是否允许降级为离线
-  # 单入口强烈建议 false
-  allow-offline-fallback-for-premium-bound-name: false
+  # 离线入口遇到未知名字时如何处理
+  unknown-offline-policy:
+    # OFFLINE_PENDING = 创建 pending，踢出提示重进
+    # OFFLINE_DIRECT = 直接 forceOfflineMode 并改 GameProfile
+    mode: "OFFLINE_PENDING"
 
   # 是否禁止玩家客户端直接使用离线内部名前缀
   block-client-reserved-prefix: true

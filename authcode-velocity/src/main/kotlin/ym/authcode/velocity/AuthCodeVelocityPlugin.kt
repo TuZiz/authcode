@@ -31,16 +31,17 @@ import ym.authcode.common.protocol.AuthCodePayloadCodec
 import ym.authcode.velocity.command.AuthCodeVelocityCommand
 import ym.authcode.velocity.config.SameNameDefaultRoute
 import ym.authcode.velocity.config.SameNameRouteMode
-import ym.authcode.velocity.config.UnknownNamePolicy
+import ym.authcode.velocity.config.UnknownOfflinePolicy
+import ym.authcode.velocity.config.UnknownPremiumPolicy
 import ym.authcode.velocity.config.VelocityConfigLoader
 import ym.authcode.velocity.config.VelocitySettings
 import ym.authcode.velocity.lang.VelocityLangManager
-import ym.authcode.velocity.service.MojangNameStatus
 import ym.authcode.velocity.service.MojangProfileService
 import ym.authcode.velocity.storage.AuthProfile
 import ym.authcode.velocity.storage.AuthProfileType
 import ym.authcode.velocity.storage.PendingOfflineRename
 import ym.authcode.velocity.storage.VelocityAuthStorage
+import java.nio.charset.StandardCharsets
 import java.nio.file.Path
 import java.time.Duration
 import java.util.Locale
@@ -157,7 +158,11 @@ class AuthCodeVelocityPlugin @Inject constructor(
             return
         }
         val player = event.player
-        val plan = removePlan(player) ?: fallbackOfflinePlan(player)
+        val plan = removePlan(player)
+        if (plan == null) {
+            player.disconnect(lang.render("same-name-login.route-plan-missing"))
+            return
+        }
         if (plan.premium && !player.isOnlineMode) {
             player.disconnect(lang.render("same-name-login.premium-bound-kick"))
             return
@@ -190,6 +195,9 @@ class AuthCodeVelocityPlugin @Inject constructor(
             remoteIp = player.remoteAddress.address?.hostAddress ?: player.remoteAddress.hostString,
             loginTime = verifiedAt
         )
+        if (plan.routeType == RouteType.PREMIUM_AUTO_BIND) {
+            persistPremiumProfile(player, verifiedAt)
+        }
         logger.info(
             "AuthCode login identity: originalName={}, internalName={}, displayName={}, uuid={}, premium={}, route={}",
             identity.originalName,
@@ -262,7 +270,7 @@ class AuthCodeVelocityPlugin @Inject constructor(
                     LoginRouteIntent.OFFLINE -> routeOfflineIntent(event)
                     LoginRouteIntent.DENY -> {
                         event.result = PreLoginEvent.PreLoginComponentResult.denied(
-                            lang.render("same-name-login.unknown-host-denied")
+                            lang.render("same-name-login.wrong-host")
                         )
                         completed()
                     }
@@ -337,38 +345,34 @@ class AuthCodeVelocityPlugin @Inject constructor(
     }
 
     private fun routeUnknownPremium(event: PreLoginEvent): CompletableFuture<Void> {
-        if (!settings.premium.enabled) {
-            event.result = PreLoginEvent.PreLoginComponentResult.denied(
-                lang.render("same-name-login.premium-route-denied")
-            )
-            return completed()
-        }
-        return premiumService.fetchProfile(event.username).thenCompose { lookup ->
-            when {
-                lookup.status == MojangNameStatus.PREMIUM && lookup.uuid != null -> {
-                    storage.bindPremiumProfile(
-                        lookup.name ?: event.username,
-                        lookup.uuid,
-                        System.currentTimeMillis()
-                    ).thenApply<Void> { profile ->
-                        routePremiumBound(event, profile)
-                        null
-                    }
-                }
-                lookup.status == MojangNameStatus.FAILED -> {
-                    event.result = PreLoginEvent.PreLoginComponentResult.denied(
-                        lang.render("velocity.mojang-failed-deny")
-                    )
-                    completed()
-                }
-                else -> {
-                    event.result = PreLoginEvent.PreLoginComponentResult.denied(
-                        lang.render("same-name-login.premium-route-denied")
-                    )
-                    completed()
-                }
+        return when (settings.sameNameLogin.unknownPremiumPolicy) {
+            UnknownPremiumPolicy.AUTO_MOJANG_BIND -> {
+                routePremiumAutoBind(event)
+                completed()
+            }
+            UnknownPremiumPolicy.ADMIN_BIND_ONLY -> {
+                event.result = PreLoginEvent.PreLoginComponentResult.denied(
+                    lang.render("same-name-login.premium-not-bound")
+                )
+                completed()
             }
         }
+    }
+
+    private fun routePremiumAutoBind(event: PreLoginEvent) {
+        val plan = LoginRoutePlan(
+            key = routeKey(event.connection, event.username.lowercase(Locale.ROOT)),
+            originalName = event.username,
+            internalName = event.username,
+            displayName = event.username,
+            uuid = pendingPremiumUuid(event.username),
+            premium = true,
+            authType = AuthProfileType.PREMIUM,
+            routeType = RouteType.PREMIUM_AUTO_BIND,
+            createdAt = System.currentTimeMillis()
+        )
+        rememberPlan(plan)
+        event.result = PreLoginEvent.PreLoginComponentResult.forceOnlineMode()
     }
 
     private fun resolveVirtualHostIntent(event: PreLoginEvent): LoginRouteIntent {
@@ -451,9 +455,9 @@ class AuthCodeVelocityPlugin @Inject constructor(
                 if (pending != null) {
                     routePendingConfirmed(event, pending, now)
                 } else {
-                    when (settings.sameNameLogin.unknownNamePolicy) {
-                        UnknownNamePolicy.OFFLINE_PENDING -> createPendingAndDeny(event, ip, now)
-                        UnknownNamePolicy.OFFLINE_DIRECT -> routeUnknownOfflineDirect(event)
+                    when (settings.sameNameLogin.unknownOfflinePolicy) {
+                        UnknownOfflinePolicy.OFFLINE_PENDING -> createPendingAndDeny(event, ip, now)
+                        UnknownOfflinePolicy.OFFLINE_DIRECT -> routeUnknownOfflineDirect(event)
                     }
                 }
             }
@@ -568,6 +572,14 @@ class AuthCodeVelocityPlugin @Inject constructor(
         }
     }
 
+    private fun persistPremiumProfile(player: Player, verifiedAt: Long) {
+        storage.bindPremiumProfile(player.username, player.uniqueId, verifiedAt).whenComplete { _, throwable ->
+            if (throwable != null) {
+                logger.warn("AuthCode premium profile save failed for {}: {}", player.username, throwable.message)
+            }
+        }
+    }
+
     private fun rememberPlan(plan: LoginRoutePlan) {
         plansByKey[plan.key] = plan
         plansByName[plan.originalName.lowercase(Locale.ROOT)] = plan
@@ -593,23 +605,14 @@ class AuthCodeVelocityPlugin @Inject constructor(
         return plan
     }
 
-    private fun fallbackOfflinePlan(player: Player): LoginRoutePlan {
-        val now = System.currentTimeMillis()
-        return LoginRoutePlan(
-            key = "fallback:${player.uniqueId}",
-            originalName = player.username,
-            internalName = player.username,
-            displayName = player.username,
-            uuid = player.uniqueId,
-            premium = false,
-            authType = AuthProfileType.OFFLINE,
-            routeType = RouteType.OFFLINE_EXISTING,
-            createdAt = now
-        )
-    }
-
     private fun routeKey(connection: InboundConnection, originalNameLower: String): String {
         return "${connection.remoteAddress}|$originalNameLower"
+    }
+
+    private fun pendingPremiumUuid(username: String): UUID {
+        return UUID.nameUUIDFromBytes(
+            "AuthCode:PendingPremium:${username.lowercase(Locale.ROOT)}".toByteArray(StandardCharsets.UTF_8)
+        )
     }
 
     private fun offlineUuid(originalName: String, internalName: String): UUID {
@@ -687,6 +690,7 @@ private data class LoginRoutePlan(
 
 private enum class RouteType {
     PREMIUM_BOUND,
+    PREMIUM_AUTO_BIND,
     OFFLINE_EXISTING,
     OFFLINE_PENDING_CONFIRMED
 }
